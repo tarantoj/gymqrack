@@ -10,12 +10,12 @@
 #   services.vivagym-wallet = {
 #     enable = true;
 #     publicUrl = "https://qr.example.com";
-#     email = "member@example.com";
-#     passwordFile = config.age.secrets."vivagym-password".path; # e.g. sops-nix / agenix
+#     trustProxy = true;
 #   };
 #
-# The server listens on host:port (127.0.0.1:4567 by default); put it behind
-# a reverse proxy (nginx/caddy) to expose it over HTTPS.
+# Users authenticate through the web UI (email + password); the server is a
+# stateless proxy and never stores their credentials. Put it behind a reverse
+# proxy (nginx/caddy) to expose it over HTTPS.
 
 { config, lib, pkgs, ... }:
 
@@ -57,20 +57,22 @@ in
       description = "VivaGym API locale (es, en, pt).";
     };
 
-    email = lib.mkOption {
-      type = lib.types.str;
-      default = "";
-      description = "VivaGym member email (username). Can also be set in passwordFile.";
+    loginRatePerMinute = lib.mkOption {
+      type = lib.types.int;
+      default = 10;
+      description = "Max login attempts per minute per IP.";
     };
 
-    passwordFile = lib.mkOption {
-      type = lib.types.nullOr lib.types.path;
-      default = null;
-      description = ''
-        Path to a file containing the member password, e.g. `VIVAGYM_PASSWORD=...`.
-        Point this at a secret from sops-nix/agenix so the password never lands in
-        the Nix store. VIVAGYM_EMAIL may also be set here.
-      '';
+    cookieMaxAgeDays = lib.mkOption {
+      type = lib.types.int;
+      default = 7;
+      description = "Lifetime of the client-held session cookie (days).";
+    };
+
+    trustProxy = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Honor X-Forwarded-For for login rate limiting (set behind a reverse proxy).";
     };
   };
 
@@ -92,8 +94,10 @@ in
           "PORT=${toString cfg.port}"
           "HOST=${cfg.host}"
           "PUBLIC_URL=${cfg.publicUrl}"
-        ] ++ lib.optionals (cfg.email != "") [ "VIVAGYM_EMAIL=${cfg.email}" ];
-        EnvironmentFile = lib.mkIf (cfg.passwordFile != null) cfg.passwordFile;
+          "LOGIN_RATE_PER_MIN=${toString cfg.loginRatePerMinute}"
+          "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
+          "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
+        ];
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectHome = true;
