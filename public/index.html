@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#fd5000" />
+  <title>VivaGym Entry QR</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: #0f1115;
+      color: #fff;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      text-align: center;
+      padding: 24px;
+    }
+    h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: #fd5000; }
+    #qrWrap {
+      background: #fff;
+      padding: 16px;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    }
+    #qr { display: block; width: min(78vw, 340px); height: min(78vw, 340px); }
+    #status { margin: 0; font-size: 0.9rem; color: #9aa3af; }
+    #payload {
+      margin: 0;
+      font-size: 0.72rem;
+      color: #5b6470;
+      word-break: break-all;
+      max-width: 90vw;
+    }
+  </style>
+</head>
+<body>
+  <h1>VivaGym — Entry / Acceso</h1>
+  <div id="qrWrap"><img id="qr" alt="Gym entry QR code" /></div>
+  <p id="status">Loading…</p>
+  <p id="payload"></p>
+
+  <script>
+    const img = document.getElementById("qr");
+    const statusEl = document.getElementById("status");
+    const payloadEl = document.getElementById("payload");
+    const REFRESH_MS = 60_000;
+
+    async function refresh() {
+      img.src = `/qr.png?t=${Date.now()}`;
+      try {
+        const res = await fetch(`/qr?t=${Date.now()}`);
+        if (!res.ok) throw new Error("bad response");
+        const data = await res.json();
+        payloadEl.textContent = data.payload;
+        statusEl.textContent =
+          "Updated " + new Date(data.issuedAt).toLocaleTimeString();
+      } catch {
+        statusEl.textContent = "Could not refresh QR";
+      }
+    }
+
+    refresh();
+    setInterval(refresh, REFRESH_MS);
+  </script>
+</body>
+</html>
