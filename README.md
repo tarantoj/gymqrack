@@ -5,13 +5,27 @@ Group app (`com.myvitale.vivagym.group`).
 
 ## What this does
 
-- `src/` — Hono + TypeScript server that authenticates against the VivaGym API
-  and serves a **live, auto-refreshing gym-entry QR code** on a web page.
+- `src/` — Hono + TypeScript **stateless proxy** to the VivaGym API. Members log
+  in through the web UI with their own VivaGym credentials and get a **live,
+  auto-refreshing gym-entry QR code**. The server never stores credentials;
+  each user's token pair lives in an HttpOnly cookie owned by their browser.
 - `nixos/` — NixOS module to run the server as a hardened systemd service.
 - `scripts/make-pass.mjs` — generates an (unsigned) Apple Wallet `.pkpass`
   launcher for the QR page.
 - `docs/vivagym-api.md` — notes on the API endpoints and auth flow (reverse
   engineered from the APK in `apk/`).
+
+## How auth works
+
+1. User submits their VivaGym email + password on the web page.
+2. The server proxies the OAuth flow (client_credentials → `exerp/newAuth`),
+   gets the member's access + refresh tokens, and hands them to the browser in
+   an **HttpOnly + Secure + SameSite=Lax cookie** — the server keeps nothing.
+3. On each `/qr` request the server reads the token pair from the cookie,
+   refreshing the ~10-minute access token transparently when needed, and
+   forwards the bearer token to `api/v2.0/exerp/qr`.
+
+Tokens are never stored in `localStorage`; do not move them there.
 
 ## Development (devenv)
 
@@ -20,7 +34,8 @@ devenv up          # run the dev server (tsx watch) on port 4567
 npm run make-pass  # build the wallet pass (needs Apple signing certs)
 ```
 
-Env: copy `.env.example` to `.env` and set `VIVAGYM_EMAIL` / `VIVAGYM_PASSWORD`.
+Env: copy `.env.example` to `.env`. Members sign in through the web UI — no
+credentials are stored in `.env`.
 
 ## Nix
 
@@ -38,8 +53,7 @@ NixOS module:
   services.vivagym-wallet = {
     enable = true;
     publicUrl = "https://qr.example.com";
-    email = "member@example.com";
-    passwordFile = config.age.secrets."vivagym-password".path;
+    trustProxy = true;   # set behind a reverse proxy (rate limiting by real IP)
   };
 }
 ```
