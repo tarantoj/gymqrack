@@ -5,13 +5,14 @@ Group app (`com.myvitale.vivagym.group`).
 
 ## What this does
 
-- `src/` — Hono + TypeScript **stateless proxy** to the VivaGym API. Members log
-  in through the web UI with their own VivaGym credentials and get a **live,
-  auto-refreshing gym-entry QR code**. The server never stores credentials;
-  each user's token pair lives in an HttpOnly cookie owned by their browser.
+- `cmd/` + `internal/` — a **Go** (stdlib `net/http`) **stateless proxy** to the
+  VivaGym API. Members log in through the web UI with their own VivaGym
+  credentials and get a **live, auto-refreshing gym-entry QR code**. The server
+  never stores credentials; each user's token pair lives in an HttpOnly cookie
+  owned by their browser.
 - `nixos/` — NixOS module to run the server as a hardened systemd service.
-- `scripts/make-pass.mjs` — generates an (unsigned) Apple Wallet `.pkpass`
-  launcher for the QR page.
+- `cmd/make-pass` — generates an (unsigned) Apple Wallet `.pkpass` launcher for
+  the QR page.
 - `docs/vivagym-api.md` — notes on the API endpoints and auth flow (reverse
   engineered from the APK in `apk/`).
 
@@ -30,8 +31,8 @@ Tokens are never stored in `localStorage`; do not move them there.
 ## Development (devenv)
 
 ```sh
-devenv up          # run the dev server (tsx watch) on port 4567
-npm run make-pass  # build the wallet pass (needs Apple signing certs)
+devenv up          # run the dev server (go run) on port 4567
+devenv up --process make-pass  # build the wallet pass (needs Apple signing certs)
 ```
 
 Env: copy `.env.example` to `.env`. Members sign in through the web UI — no
@@ -62,12 +63,18 @@ NixOS module:
 
 ```
 ├── apk/            # original .xapk (untracked binary)
+├── cmd/            # vivagym-wallet (server) + make-pass (.pkpass generator)
 ├── docs/           # API reverse-engineering notes
+├── internal/       # server (handlers, cookie, rate limiting) + VivaGym API client + QR
 ├── nixos/          # NixOS service module
 ├── public/         # live-QR web page
-├── scripts/        # .pkpass generator
-├── src/            # Hono server + VivaGym API client
 ├── devenv.nix      # developer environment
 ├── flake.nix       # nix package + module outputs
-└── package.nix     # buildNpmPackage derivation
+└── package.nix     # buildGoModule derivation
+```
+
+## Tests
+
+```sh
+go test ./...
 ```

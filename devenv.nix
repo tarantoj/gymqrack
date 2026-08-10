@@ -6,30 +6,26 @@ in
 {
   name = "vivagym-wallet";
 
-  # Loads .env into the shell / processes (VIVAGYM_EMAIL, VIVAGYM_PASSWORD, ...)
+  # Loads .env into the shell / processes (VIVAGYM_CLIENT_ID, ...)
   dotenv.enable = true;
 
-  languages.javascript.enable = true;
-  languages.javascript.package = pkgs.nodejs_24;
-  languages.javascript.npm.enable = true;
+  languages.go.enable = true;
+  languages.go.lsp.enable = true;
 
   packages = with pkgs; [
-    openssl # PKCS#7 pass signature (scripts/make-pass.mjs)
+    openssl # PKCS#7 pass signature (cmd/make-pass)
     zip     # .pkpass packaging
     vivagymWallet # nix-built server (bin: vivagym-wallet)
   ];
 
-  processes.dev.exec = "npm run dev";
+  processes.dev.exec = "go run ./cmd/vivagym-wallet";
   processes.server.exec = "${vivagymWallet}/bin/vivagym-wallet";
+  processes.make-pass.exec = "${vivagymWallet}/bin/make-pass";
 
   enterShell = ''
-    if [ ! -d node_modules ]; then
-      echo "Installing npm dependencies…"
-      npm install
-    fi
     echo "VivaGym Wallet dev shell"
-    echo "  dev server : devenv up            (npm run dev)"
+    echo "  dev server : devenv up            (go run ./cmd/vivagym-wallet)"
     echo "  nix build  : devenv up --process server   (vivagym-wallet)"
-    echo "  wallet pass: npm run make-pass    (requires Apple signing certs, see scripts/make-pass.mjs)"
+    echo "  wallet pass: devenv up --process make-pass  (requires Apple signing certs, see cmd/make-pass)"
   '';
 }
