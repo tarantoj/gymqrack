@@ -11,6 +11,10 @@
 #     enable = true;
 #     publicUrl = "https://qr.example.com";
 #     trustProxy = true;
+#     clientId = "your-client-id";
+#     clientSecret = "your-client-secret";
+#     # or load VIVAGYM_CLIENT_ID / VIVAGYM_CLIENT_SECRET from a root-owned file:
+#     # environmentFile = "/run/secrets/vivagym-wallet.env";
 #   };
 #
 # Users authenticate through the web UI (email + password); the server is a
@@ -74,9 +78,38 @@ in
       default = false;
       description = "Honor X-Forwarded-For for login rate limiting (set behind a reverse proxy).";
     };
+
+    clientId = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "VivaGym OAuth client id (VIVAGYM_CLIENT_ID). Required unless provided via environmentFile.";
+    };
+
+    clientSecret = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "VivaGym OAuth client secret (VIVAGYM_CLIENT_SECRET). Required unless provided via environmentFile.";
+    };
+
+    environmentFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "File (e.g. /run/secrets/vivagym-wallet.env) holding VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET, loaded by systemd. Alternative to setting clientId/clientSecret as options.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = (cfg.clientId != null) == (cfg.clientSecret != null);
+        message = "services.vivagym-wallet: set both clientId and clientSecret, or neither (use environmentFile instead).";
+      }
+      {
+        assertion = cfg.clientId != null || cfg.environmentFile != null;
+        message = "services.vivagym-wallet: clientId and clientSecret must be set, or environmentFile must point to a file containing VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET.";
+      }
+    ];
+
     systemd.services.vivagym-wallet = {
       description = "VivaGym Wallet live-QR server";
       after = [ "network-online.target" ];
@@ -89,15 +122,19 @@ in
         DynamicUser = true;
         Restart = "on-failure";
         RestartSec = 5;
-        Environment = [
-          "VIVAGYM_LOCALE=${cfg.locale}"
-          "PORT=${toString cfg.port}"
-          "HOST=${cfg.host}"
-          "PUBLIC_URL=${cfg.publicUrl}"
-          "LOGIN_RATE_PER_MIN=${toString cfg.loginRatePerMinute}"
-          "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
-          "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
-        ];
+        EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
+        Environment =
+          [
+            "VIVAGYM_LOCALE=${cfg.locale}"
+            "PORT=${toString cfg.port}"
+            "HOST=${cfg.host}"
+            "PUBLIC_URL=${cfg.publicUrl}"
+            "LOGIN_RATE_PER_MIN=${toString cfg.loginRatePerMinute}"
+            "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
+            "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
+          ]
+          ++ lib.optional (cfg.clientId != null) "VIVAGYM_CLIENT_ID=${cfg.clientId}"
+          ++ lib.optional (cfg.clientSecret != null) "VIVAGYM_CLIENT_SECRET=${cfg.clientSecret}";
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectHome = true;
