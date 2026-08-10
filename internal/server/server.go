@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -90,19 +91,11 @@ func (s *Server) clientIP(r *http.Request) string {
 			return strings.TrimSpace(parts[0])
 		}
 	}
-	host, _, err := splitHostPort(r.RemoteAddr)
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
 		return host
 	}
 	return "unknown"
-}
-
-func splitHostPort(addr string) (string, string, error) {
-	i := strings.LastIndex(addr, ":")
-	if i < 0 {
-		return "", "", errors.New("no port")
-	}
-	return addr[:i], addr[i+1:], nil
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
