@@ -5,9 +5,8 @@
 
 const BASE_URL = "https://vivagym.myvitale.com";
 
-// Hardcoded in the app (com.vitale.coredata.BuildConfig)
-const CLIENT_ID = "4_43uq8rgou3y88ckkk0sgg8c408w4gwsssg8owg0ow4wcocgw0w";
-const CLIENT_SECRET = "1uiljdab2misc4owsc0kg0cw0kgw0k0gkgk0k8k488w8sskk4s";
+const CLIENT_ID = process.env.VIVAGYM_CLIENT_ID!;
+const CLIENT_SECRET = process.env.VIVAGYM_CLIENT_SECRET!;
 
 const APP_NAME = "vivagym";
 
