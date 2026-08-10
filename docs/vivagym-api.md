@@ -51,8 +51,8 @@ Object authentication(@Body OauthModel oauthModel, Continuation<...>);
 The body is `OauthModel(grant_type, client_id, client_secret)`:
 
 - `grant_type` = `client_credentials`
-- `client_id` = `4_43uq8rgou3y88ckkk0sgg8c408w4gwsssg8owg0ow4wcocgw0w`
-- `client_secret` = `1uiljdab2misc4owsc0kg0cw0kgw0k0gkgk0k8k488w8sskk4s`
+- `client_id` = (from `com.vitale.coredata.BuildConfig`; set as `VIVAGYM_CLIENT_ID` in the server's `.env`)
+- `client_secret` = (from `com.vitale.coredata.BuildConfig`; set as `VIVAGYM_CLIENT_SECRET` in the server's `.env`)
 
 (from `com.vitale.coredata.BuildConfig` and `Authentication.java:59-60`)
 
@@ -120,9 +120,9 @@ LOCALE=es            # es | en | pt
 # 1) anonymous client-credentials token
 TEMP=$(curl -s -X POST "$BASE/oauth/v2/token" \
   -H 'Content-Type: application/json' \
-  -d '{"grant_type":"client_credentials",
-       "client_id":"4_43uq8rgou3y88ckkk0sgg8c408w4gwsssg8owg0ow4wcocgw0w",
-       "client_secret":"1uiljdab2misc4owsc0kg0cw0kgw0k0gkgk0k8k488w8sskk4s"}' \
+  -d "{\"grant_type\":\"client_credentials\",
+       \"client_id\":\"$VIVAGYM_CLIENT_ID\",
+       \"client_secret\":\"$VIVAGYM_CLIENT_SECRET\"}" \
   | jq -r .access_token)
 
 # 2) log in with the member's email/password -> get bearer token
