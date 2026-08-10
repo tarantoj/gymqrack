@@ -65,6 +65,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /qr", s.handleQR)
 	mux.HandleFunc("GET /qr.png", s.handleQRPNG)
+	mux.HandleFunc("GET /qr.svg", s.handleQRSVG)
 	if s.cfg.PublicDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(s.cfg.PublicDir)))
 	}
@@ -236,6 +237,22 @@ func (s *Server) handleQRPNG(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	w.WriteHeader(http.StatusOK)
 	w.Write(png)
+}
+
+func (s *Server) handleQRSVG(w http.ResponseWriter, r *http.Request) {
+	payload, status, err := s.qrResult(w, r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	svg, err := qr.SVG(payload)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.WriteHeader(http.StatusOK)
+	w.Write(svg)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

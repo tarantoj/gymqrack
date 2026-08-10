@@ -1,57 +1,45 @@
-// Package qr renders QR codes as PNG images.
+// Package qr renders QR codes as PNG or SVG images.
 package qr
 
 import (
-	"bytes"
-	"image"
-	"image/png"
-
-	"github.com/skip2/go-qrcode"
+	go_qr "github.com/piglig/go-qr"
 )
 
-// margin is the quiet-zone width in modules, matching the previous TypeScript
+// border is the quiet-zone width in modules, matching the previous TypeScript
 // server's `qrcode.toBuffer(payload, { width: 512, margin: 2 })`.
-const margin = 2
+const border = 2
 
-// PNG renders payload as a 512x512 PNG with a 2-module quiet zone.
+// maxSize is the largest rendered side in pixels; larger symbols shrink the
+// module scale so the output never exceeds it.
+const maxSize = 512
+
+// scaleFor picks a pixels-per-module scale so the full symbol (including the
+// quiet zone) fits within maxSize.
+func scaleFor(modules int) int {
+	if s := maxSize / (modules + 2*border); s > 1 {
+		return s
+	}
+	return 1
+}
+
+func encode(payload string) (*go_qr.QrCode, error) {
+	return go_qr.EncodeText(payload, go_qr.Medium)
+}
+
+// PNG renders payload as a PNG with a 2-module quiet zone.
 func PNG(payload string) ([]byte, error) {
-	q, err := qrcode.New(payload, qrcode.Medium)
+	q, err := encode(payload)
 	if err != nil {
 		return nil, err
 	}
-	q.DisableBorder = true
-	bitmap := q.Bitmap()
+	return q.ToPNGBytes(go_qr.NewQrCodeImgConfig(scaleFor(q.Size()), border))
+}
 
-	modules := len(bitmap)
-	total := modules + 2*margin
-	scale := 512 / total
-	offset := (512 - total*scale) / 2
-
-	img := image.NewRGBA(image.Rect(0, 0, 512, 512))
-	fill := func(x, y, w, h int, on bool) {
-		for yy := y; yy < y+h; yy++ {
-			for xx := x; xx < x+w; xx++ {
-				if on {
-					img.Set(xx, yy, image.Black)
-				} else {
-					img.Set(xx, yy, image.White)
-				}
-			}
-		}
-	}
-
-	// Background (quiet zone + remainder pixels).
-	fill(0, 0, 512, 512, false)
-
-	for y, row := range bitmap {
-		for x, on := range row {
-			fill(offset+(x+margin)*scale, offset+(y+margin)*scale, scale, scale, on)
-		}
-	}
-
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
+// SVG renders payload as a compact single-path SVG with a 2-module quiet zone.
+func SVG(payload string) ([]byte, error) {
+	q, err := encode(payload)
+	if err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	return q.ToSVGBytes(go_qr.NewQrCodeImgConfig(scaleFor(q.Size()), border, go_qr.WithOptimalSVG()))
 }

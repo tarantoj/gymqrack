@@ -180,6 +180,29 @@ func TestQRPNG(t *testing.T) {
 	}
 }
 
+func TestQRSVG(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+	tok := Tokens{
+		AccessToken:  "access-1",
+		RefreshToken: "refresh-1",
+		ExpiresIn:    600,
+		IssuedAt:     time.Now().UnixMilli(),
+		Email:        "u@e.com",
+	}
+	cookie := &http.Cookie{Name: cookieName, Value: encodeTokens(tok), Path: "/"}
+	rec, _ := doJSON(t, h, http.MethodGet, "/qr.svg", "", []*http.Cookie{cookie})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("qr.svg status = %d, body=%s", rec.Code, rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/svg+xml" {
+		t.Fatalf("content-type = %q", ct)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("<svg")) {
+		t.Fatal("response is not SVG markup")
+	}
+}
+
 func TestLoginValidation(t *testing.T) {
 	s := newTestServer(t)
 	h := s.Handler()

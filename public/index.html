@@ -133,7 +133,7 @@
     }
 
     async function refresh() {
-      img.src = `/qr.png?t=${Date.now()}`;
+      img.src = `/qr.svg?t=${Date.now()}`;
       try {
         const res = await fetch(`/qr?t=${Date.now()}`);
         if (res.status === 401) return showLogin("Session expired, sign in again");

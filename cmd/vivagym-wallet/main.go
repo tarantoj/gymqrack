@@ -66,6 +66,7 @@ func main() {
 	log.Printf("VivaGym live QR running: %s", publicURL)
 	log.Printf("  live screen : %s/", publicURL)
 	log.Printf("  QR PNG      : %s/qr.png", publicURL)
+	log.Printf("  QR SVG      : %s/qr.svg", publicURL)
 	log.Printf("  JSON payload: %s/qr", publicURL)
 	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
 		log.Fatal(err)
