@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const BaseURL = "https://vivagym.myvitale.com"
@@ -229,7 +231,12 @@ func New(baseURL, clientID, clientSecret, locale string) *Client {
 		ClientSecret: clientSecret,
 		Locale:       locale,
 		HTTP: &http.Client{
-			Timeout: 30 * time.Second,
+			// otelhttp.NewTransport emits client spans for the upstream
+			// calls. It only records method/path/status/duration, never
+			// headers or bodies, so tokens, passwords and QR payloads stay
+			// out of traces.
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+			Timeout:   30 * time.Second,
 		},
 	}
 }

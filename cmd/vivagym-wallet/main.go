@@ -5,15 +5,33 @@
 //	VIVAGYM_CLIENT_ID, VIVAGYM_CLIENT_SECRET (required)
 //	VIVAGYM_LOCALE, PORT, HOST, PUBLIC_URL (optional)
 //	COOKIE_MAX_AGE_DAYS, LOGIN_RATE_PER_MIN, TRUST_PROXY (optional)
+//
+// OpenTelemetry: traces go to the OTLP HTTP collector at
+// OTEL_EXPORTER_OTLP_ENDPOINT when set, otherwise to stdout. Set
+// OTEL_SERVICE_NAME (default vivagym-wallet) or OTEL_SDK_DISABLED=1 to turn
+// tracing off. Standard OTEL_EXPORTER_OTLP_* env vars apply.
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"vivagym/internal/server"
 	"vivagym/internal/vivagym"
@@ -24,12 +42,56 @@ func envInt(name string, def int) int {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
-		log.Printf("warning: invalid %s=%q, using %d", name, v, def)
+		slog.Warn("invalid env value, using default", "env", name, "value", v, "default", def)
 	}
 	return def
 }
 
+// newTracerProvider sets up the global OpenTelemetry tracer provider. Spans go
+// to the OTLP HTTP endpoint from OTEL_EXPORTER_OTLP_ENDPOINT when configured,
+// otherwise they are printed to stdout. Returns a no-op provider (and a no-op
+// shutdown) when tracing is disabled.
+func newTracerProvider() (*sdktrace.TracerProvider, func(context.Context) error) {
+	noop := func(context.Context) error { return nil }
+	if os.Getenv("OTEL_SDK_DISABLED") == "1" {
+		return sdktrace.NewTracerProvider(), noop
+	}
+
+	serviceName := os.Getenv("OTEL_SERVICE_NAME")
+	if serviceName == "" {
+		serviceName = "vivagym-wallet"
+	}
+	res := resource.NewSchemaless(attribute.String("service.name", serviceName))
+
+	var exporter sdktrace.SpanExporter
+	var err error
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+		exporter, err = otlptracehttp.New(context.Background())
+	} else {
+		exporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
+	}
+	if err != nil {
+		slog.Error("failed to create trace exporter, tracing disabled", "error", err)
+		return sdktrace.NewTracerProvider(), noop
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	return tp, func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		return tp.Shutdown(ctx)
+	}
+}
+
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+
 	port := envInt("PORT", 4567)
 	host := os.Getenv("HOST")
 	if host == "" {
@@ -48,8 +110,14 @@ func main() {
 	clientID := os.Getenv("VIVAGYM_CLIENT_ID")
 	clientSecret := os.Getenv("VIVAGYM_CLIENT_SECRET")
 	if clientID == "" || clientSecret == "" {
-		log.Fatal("VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET must be set")
+		slog.Error("VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET must be set")
+		os.Exit(1)
 	}
+
+	_, flush := newTracerProvider()
+	defer func() {
+		_ = flush(context.Background())
+	}()
 
 	client := vivagym.New("", clientID, clientSecret, locale)
 
@@ -62,14 +130,26 @@ func main() {
 		PublicDir:       publicDir(),
 	})
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	addr := fmt.Sprintf("%s:%d", host, port)
-	log.Printf("VivaGym live QR running: %s", publicURL)
-	log.Printf("  live screen : %s/", publicURL)
-	log.Printf("  QR PNG      : %s/qr.png", publicURL)
-	log.Printf("  QR SVG      : %s/qr.svg", publicURL)
-	log.Printf("  JSON payload: %s/qr", publicURL)
-	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
-		log.Fatal(err)
+	httpServer := &http.Server{Addr: addr, Handler: srv.Handler()}
+
+	go func() {
+		slog.Info("VivaGym live QR running", "url", publicURL, "addr", addr)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("server failed", "error", err)
+			stop()
+		}
+	}()
+
+	<-ctx.Done()
+	slog.Info("shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		slog.Error("graceful shutdown failed", "error", err)
 	}
 }
 

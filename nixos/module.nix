@@ -15,6 +15,10 @@
 #     clientSecret = "your-client-secret";
 #     # or load VIVAGYM_CLIENT_ID / VIVAGYM_CLIENT_SECRET from a root-owned file:
 #     # environmentFile = "/run/secrets/vivagym-wallet.env";
+#     # telemetry (optional): export OpenTelemetry traces to an OTLP collector,
+#     # otherwise they go to stdout.
+#     # telemetryOtlpEndpoint = "https://collector.example.com:4318";
+#     # telemetryServiceName = "vivagym-wallet";
 #   };
 #
 # Users authenticate through the web UI (email + password); the server is a
@@ -96,6 +100,18 @@ in
       default = null;
       description = "File (e.g. /run/secrets/vivagym-wallet.env) holding VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET, loaded by systemd. Alternative to setting clientId/clientSecret as options.";
     };
+
+    telemetryOtlpEndpoint = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "OTLP HTTP collector endpoint. When set, OpenTelemetry traces are exported to it; otherwise they are written to stdout. Exporter headers can be set via OTEL_EXPORTER_OTLP_HEADERS in environmentFile.";
+    };
+
+    telemetryServiceName = lib.mkOption {
+      type = lib.types.str;
+      default = "vivagym-wallet";
+      description = "OpenTelemetry service name (OTEL_SERVICE_NAME).";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -132,7 +148,9 @@ in
             "LOGIN_RATE_PER_MIN=${toString cfg.loginRatePerMinute}"
             "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
             "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
+            "OTEL_SERVICE_NAME=${cfg.telemetryServiceName}"
           ]
+          ++ lib.optional (cfg.telemetryOtlpEndpoint != null) "OTEL_EXPORTER_OTLP_ENDPOINT=${cfg.telemetryOtlpEndpoint}"
           ++ lib.optional (cfg.clientId != null) "VIVAGYM_CLIENT_ID=${cfg.clientId}"
           ++ lib.optional (cfg.clientSecret != null) "VIVAGYM_CLIENT_SECRET=${cfg.clientSecret}";
         NoNewPrivileges = true;

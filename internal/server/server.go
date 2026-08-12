@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 
 	"vivagym/internal/qr"
 	"vivagym/internal/vivagym"
@@ -57,7 +60,8 @@ func New(cfg Config) *Server {
 	}
 }
 
-// Handler returns the fully-routed HTTP handler.
+// Handler returns the fully-routed HTTP handler, wrapped in OpenTelemetry
+// tracing (one root span per request) and structured request logging.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleIndex)
@@ -70,7 +74,50 @@ func (s *Server) Handler() http.Handler {
 	if s.cfg.PublicDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(s.cfg.PublicDir)))
 	}
-	return mux
+	return otelhttp.NewHandler(s.logRequests(mux), "vivagym-wallet",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}))
+}
+
+// logRequests logs one structured line per request, tagged with the request's
+// trace/span IDs so spans and logs can be correlated.
+func (s *Server) logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(rec, r)
+		attrs := []slog.Attr{
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.Int("status", rec.status()),
+			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+		}
+		if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
+			attrs = append(attrs,
+				slog.String("trace_id", sc.TraceID().String()),
+				slog.String("span_id", sc.SpanID().String()))
+		}
+		slog.LogAttrs(r.Context(), slog.LevelInfo, "http request", attrs...)
+	})
+}
+
+// statusRecorder captures the response status code written by a handler.
+type statusRecorder struct {
+	http.ResponseWriter
+	code int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.code = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *statusRecorder) status() int {
+	if r.code == 0 {
+		return http.StatusOK
+	}
+	return r.code
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +199,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	pair, err := s.client.Login(r.Context(), email, password)
 	if err != nil {
-		log.Printf("login failed for %s - %v", email, err)
+		slog.WarnContext(r.Context(), "login failed", "email", email, "error", err)
 		renderLogin(w, loginData{Error: "Invalid credentials"})
 		return
 	}
