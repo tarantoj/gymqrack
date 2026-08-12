@@ -4,6 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#fd5000" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="VivaGym QR" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-180.png" />
   <title>VivaGym Entry QR</title>
   <style>
     * { box-sizing: border-box; }
@@ -19,7 +26,7 @@
       color: #fff;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       text-align: center;
-      padding: 24px;
+      padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
     }
     h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: #fd5000; }
     .card {
@@ -62,13 +69,14 @@
     }
     .topbar .email { font-size: 0.85rem; color: #9aa3af; overflow: hidden; text-overflow: ellipsis; }
     .topbar button { padding: 8px 14px; font-size: 0.85rem; }
+    .topbar, #qrWrap { user-select: none; -webkit-user-select: none; }
     #qrWrap {
       background: #fff;
       padding: 16px;
       border-radius: 16px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
     }
-    #qrWrap svg { display: block; width: min(78vw, 340px); height: min(78vw, 340px); margin-inline: auto; }
+    #qrWrap svg { display: block; width: min(84vw, 360px); height: min(84vw, 360px); margin-inline: auto; }
     #status { margin: 0; font-size: 0.9rem; color: #9aa3af; }
     #payload {
       margin: 0;
@@ -84,5 +92,6 @@
   <h1>VivaGym — Entry / Acceso</h1>
   <div id="app">{{if eq .View "login"}}{{template "login" .}}{{else}}{{template "qr" .}}{{end}}</div>
   <script src="/htmx.min.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 {{define "qr"}}
-<div id="qrView" hx-get="/qr/fragment" hx-trigger="every 60s" hx-swap="outerHTML">
+<div id="qrView" hx-get="/qr/fragment" hx-trigger="every 60s, tabvisible" hx-swap="outerHTML">
   <div class="topbar">
     <span class="email">{{.Email}}</span>
     <button hx-post="/auth/logout" hx-target="#app" hx-swap="innerHTML" class="secondary">Log out</button>

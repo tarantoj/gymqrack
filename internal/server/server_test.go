@@ -115,7 +115,7 @@ func TestIndexRendersLoginWhenUnauthenticated(t *testing.T) {
 		t.Fatalf("index status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"<!doctype html>", `hx-post="/auth/login"`, `id="loginView"`, "/htmx.min.js"} {
+	for _, want := range []string{"<!doctype html>", `hx-post="/auth/login"`, `id="loginView"`, "/htmx.min.js", `rel="manifest"`, "/app.js", "apple-mobile-web-app-capable"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q:\n%s", want, body)
 		}
@@ -133,7 +133,7 @@ func TestIndexRendersQRWhenAuthenticated(t *testing.T) {
 		t.Fatalf("index status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1", "<svg", `hx-get="/qr/fragment"`} {
+	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1", "<svg", `hx-get="/qr/fragment"`, "tabvisible"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q:\n%s", want, body)
 		}
