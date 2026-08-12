@@ -59,11 +59,11 @@ func New(cfg Config) *Server {
 // Handler returns the fully-routed HTTP handler.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /health", s.handleHealth)
-	mux.HandleFunc("GET /auth/session", s.handleSession)
 	mux.HandleFunc("POST /auth/login", s.handleLogin)
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
-	mux.HandleFunc("GET /qr", s.handleQR)
+	mux.HandleFunc("GET /qr/fragment", s.handleQRFragment)
 	mux.HandleFunc("GET /qr.png", s.handleQRPNG)
 	mux.HandleFunc("GET /qr.svg", s.handleQRSVG)
 	if s.cfg.PublicDir != "" {
@@ -73,16 +73,28 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
-func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
-	t, ok := readTokens(r)
-	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]bool{"authenticated": false})
+// handleIndex renders the full page, showing the sign-in form when the visitor
+// has no valid session and the live QR view otherwise.
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	payload, status, err := s.qrResult(w, r)
+	email, _ := readTokens(r)
+	if err != nil {
+		if status == http.StatusUnauthorized {
+			renderPage(w, pageData{View: "login", loginData: loginData{}})
+			return
+		}
+		renderPage(w, pageData{View: "qr", qrData: qrData{
+			Email: email.Email, Nonce: time.Now().UnixMilli(), Updated: "Could not refresh QR",
+		}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"authenticated": true, "email": t.Email})
+	renderPage(w, pageData{View: "qr", qrData: qrData{
+		Email: email.Email, Nonce: time.Now().UnixMilli(), Updated: "Updated " + time.Now().Format(time.Kitchen), Payload: payload,
+	}})
 }
 
 func (s *Server) clientIP(r *http.Request) string {
@@ -102,30 +114,44 @@ func (s *Server) clientIP(r *http.Request) string {
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	ip := s.clientIP(r)
 	if !s.limiter.allow(ip) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "Too many attempts, try again later"})
+		renderLogin(w, loginData{Error: "Too many attempts, try again later"})
 		return
 	}
 
-	var body struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	dec := json.NewDecoder(r.Body)
-	if err := dec.Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	var email, password string
+	switch ct := r.Header.Get("Content-Type"); {
+	case strings.HasPrefix(ct, "application/json"):
+		var body struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		dec := json.NewDecoder(r.Body)
+		if err := dec.Decode(&body); err != nil {
+			renderLogin(w, loginData{Error: "Invalid request"})
+			return
+		}
+		email, password = body.Email, body.Password
+	case ct == "application/x-www-form-urlencoded" || strings.HasPrefix(ct, "multipart/form-data"):
+		if err := r.ParseForm(); err != nil {
+			renderLogin(w, loginData{Error: "Invalid request"})
+			return
+		}
+		email, password = r.FormValue("email"), r.FormValue("password")
+	default:
+		renderLogin(w, loginData{Error: "Invalid request"})
 		return
 	}
-	email := strings.ToLower(strings.TrimSpace(body.Email))
-	password := body.Password
+
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || password == "" || len(email) > 254 || len(password) > 256 || !strings.Contains(email, "@") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid email or password"})
+		renderLogin(w, loginData{Error: "Invalid email or password"})
 		return
 	}
 
 	pair, err := s.client.Login(r.Context(), email, password)
 	if err != nil {
 		log.Printf("login failed for %s - %v", email, err)
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
+		renderLogin(w, loginData{Error: "Invalid credentials"})
 		return
 	}
 	s.limiter.reset(ip)
@@ -136,12 +162,26 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		IssuedAt:     time.Now().UnixMilli(),
 		Email:        email,
 	})
-	writeJSON(w, http.StatusOK, map[string]string{"email": email})
+	s.renderQRView(w, r, email, pair.AccessToken)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	s.clearTokens(w)
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	renderLogin(w, loginData{})
+}
+
+// renderQRView renders the QR fragment, fetching the payload with the given
+// fresh access token and falling back to a transient status on failure.
+func (s *Server) renderQRView(w http.ResponseWriter, r *http.Request, email, accessToken string) {
+	payload, err := s.client.FetchQr(r.Context(), accessToken)
+	d := qrData{Email: email, Nonce: time.Now().UnixMilli()}
+	if err != nil {
+		d.Updated = "Could not refresh QR"
+	} else {
+		d.Updated = "Updated " + time.Now().Format(time.Kitchen)
+		d.Payload = payload
+	}
+	renderQR(w, d)
 }
 
 func (s *Server) isAccessTokenValid(t Tokens) bool {
@@ -211,15 +251,23 @@ func (s *Server) qrResult(w http.ResponseWriter, r *http.Request) (string, int, 
 	}
 }
 
-func (s *Server) handleQR(w http.ResponseWriter, r *http.Request) {
+// handleQRFragment serves the auto-refreshing QR view fragment for htmx. When
+// the session has expired it renders the login form instead (with a 200) so the
+// poller replaces itself and stops.
+func (s *Server) handleQRFragment(w http.ResponseWriter, r *http.Request) {
 	payload, status, err := s.qrResult(w, r)
 	if err != nil {
-		writeJSON(w, status, map[string]string{"error": err.Error()})
+		if status == http.StatusUnauthorized {
+			renderLogin(w, loginData{Error: "Session expired, sign in again"})
+			return
+		}
+		email, _ := readTokens(r)
+		renderQR(w, qrData{Email: email.Email, Nonce: time.Now().UnixMilli(), Updated: "Could not refresh QR"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
-		"payload":  payload,
-		"issuedAt": time.Now().Format(time.RFC3339),
+	email, _ := readTokens(r)
+	renderQR(w, qrData{
+		Email: email.Email, Nonce: time.Now().UnixMilli(), Updated: "Updated " + time.Now().Format(time.Kitchen), Payload: payload,
 	})
 }
 
@@ -253,10 +301,4 @@ func (s *Server) handleQRSVG(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.WriteHeader(http.StatusOK)
 	w.Write(svg)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
 }

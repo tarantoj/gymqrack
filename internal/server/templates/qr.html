@@ -1,0 +1,11 @@
+{{define "qr"}}
+<div id="qrView" hx-get="/qr/fragment" hx-trigger="every 60s" hx-swap="outerHTML">
+  <div class="topbar">
+    <span class="email">{{.Email}}</span>
+    <button hx-post="/auth/logout" hx-target="#app" hx-swap="innerHTML" class="secondary">Log out</button>
+  </div>
+  <div id="qrWrap"><img id="qr" src="/qr.svg?t={{.Nonce}}" alt="Gym entry QR code" /></div>
+  <p id="status">Updated {{.Updated}}</p>
+  <p id="payload">{{.Payload}}</p>
+</div>
+{{end}}

@@ -1,0 +1,10 @@
+{{define "login"}}
+<div id="loginView" class="card">
+  <form hx-post="/auth/login" hx-target="#app" hx-swap="innerHTML">
+    <input name="email" type="email" inputmode="email" autocomplete="username" placeholder="Email" required />
+    <input name="password" type="password" autocomplete="current-password" placeholder="Password" required />
+    <button type="submit" hx-disabled-elt="button">Sign in / Entrar</button>
+    <p class="error">{{.Error}}</p>
+  </form>
+</div>
+{{end}}

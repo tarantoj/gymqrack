@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,7 +85,62 @@ func doJSON(t *testing.T, h http.Handler, method, path, body string, cookies []*
 	return rec, rec.Result().Cookies()
 }
 
-func TestLoginAndSessionFlow(t *testing.T) {
+func doForm(t *testing.T, h http.Handler, method, path string, form url.Values, cookies []*http.Cookie) (*httptest.ResponseRecorder, []*http.Cookie) {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec, rec.Result().Cookies()
+}
+
+func seededCookie(email string) *http.Cookie {
+	tok := Tokens{
+		AccessToken:  "access-1",
+		RefreshToken: "refresh-1",
+		ExpiresIn:    600,
+		IssuedAt:     time.Now().UnixMilli(),
+		Email:        email,
+	}
+	return &http.Cookie{Name: cookieName, Value: encodeTokens(tok), Path: "/"}
+}
+
+func TestIndexRendersLoginWhenUnauthenticated(t *testing.T) {
+	s := newTestServer(t)
+	rec, _ := doJSON(t, s.Handler(), http.MethodGet, "/", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("index status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"<!doctype html>", `hx-post="/auth/login"`, `id="loginView"`, "/htmx.min.js"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("index missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "id=\"qrView\"") {
+		t.Fatalf("index should not show QR view when unauthenticated:\n%s", body)
+	}
+}
+
+func TestIndexRendersQRWhenAuthenticated(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+	rec, _ := doJSON(t, h, http.MethodGet, "/", "", []*http.Cookie{seededCookie("user@example.com")})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("index status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1", "/qr.svg?t=", `hx-get="/qr/fragment"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("index missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestLoginJSONSuccess(t *testing.T) {
 	s := newTestServer(t)
 	h := s.Handler()
 
@@ -95,29 +152,84 @@ func TestLoginAndSessionFlow(t *testing.T) {
 	if len(cookies) == 0 {
 		t.Fatal("no Set-Cookie on login")
 	}
-	var loginBody map[string]string
-	json.Unmarshal(rec.Body.Bytes(), &loginBody)
-	if loginBody["email"] != "user@example.com" {
-		t.Fatalf("email not normalized: %q", loginBody["email"])
-	}
-
-	// Session reflects the cookie.
-	rec, _ = doJSON(t, h, http.MethodGet, "/auth/session", "", cookies)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("session status = %d", rec.Code)
-	}
-	var sess map[string]any
-	json.Unmarshal(rec.Body.Bytes(), &sess)
-	if sess["authenticated"] != true || sess["email"] != "user@example.com" {
-		t.Fatalf("unexpected session: %v", sess)
+	body := rec.Body.String()
+	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("login response missing %q:\n%s", want, body)
+		}
 	}
 }
 
-func TestSessionUnauthenticated(t *testing.T) {
+func TestLoginFormSuccess(t *testing.T) {
 	s := newTestServer(t)
-	rec, _ := doJSON(t, s.Handler(), http.MethodGet, "/auth/session", "", nil)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", rec.Code)
+	h := s.Handler()
+
+	form := url.Values{"email": {"User@Example.com"}, "password": {"hunter2"}}
+	rec, cookies := doForm(t, h, http.MethodPost, "/auth/login", form, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login status = %d, body=%s", rec.Code, rec.Body)
+	}
+	if len(cookies) == 0 {
+		t.Fatal("no Set-Cookie on login")
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("login response missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestLoginValidation(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+
+	// Missing @ → error text, no cookie, 200 (htmx swaps it).
+	form := url.Values{"email": {"nope"}, "password": {"x"}}
+	rec, cookies := doForm(t, h, http.MethodPost, "/auth/login", form, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Invalid email or password") {
+		t.Fatalf("expected validation error, got:\n%s", rec.Body)
+	}
+	if len(cookies) != 0 {
+		t.Fatalf("no cookie should be set on validation failure, got %v", cookies)
+	}
+}
+
+func TestLoginFailureDoesNotSetCookie(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+	form := url.Values{"email": {"a@b.com"}, "password": {"wrong"}}
+	rec, cookies := doForm(t, h, http.MethodPost, "/auth/login", form, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Invalid credentials") {
+		t.Fatalf("expected invalid-credentials message, got:\n%s", rec.Body)
+	}
+	if len(cookies) != 0 {
+		t.Fatalf("no cookie should be set on failure, got %v", cookies)
+	}
+}
+
+func TestLoginRateLimit(t *testing.T) {
+	s := newTestServer(t)
+	s.limiter.perMin = 1
+	h := s.Handler()
+	for i := 0; i < 2; i++ {
+		form := url.Values{"email": {"a@b.com"}, "password": {"wrong"}}
+		rec, _ := doForm(t, h, http.MethodPost, "/auth/login", form, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("fragment should always be 200, got %d", rec.Code)
+		}
+		if i == 0 && !strings.Contains(rec.Body.String(), "Invalid credentials") {
+			t.Fatalf("first failed login should report credentials, got:\n%s", rec.Body)
+		}
+		if i == 1 && !strings.Contains(rec.Body.String(), "Too many attempts") {
+			t.Fatalf("second failed login should be rate limited, got:\n%s", rec.Body)
+		}
 	}
 }
 
@@ -134,14 +246,12 @@ func TestQRRefreshRotation(t *testing.T) {
 		Email:        "u@e.com",
 	}
 	cookie := &http.Cookie{Name: cookieName, Value: encodeTokens(tok), Path: "/"}
-	rec, cookies := doJSON(t, h, http.MethodGet, "/qr", "", []*http.Cookie{cookie})
+	rec, cookies := doJSON(t, h, http.MethodGet, "/qr/fragment", "", []*http.Cookie{cookie})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("qr status = %d, body=%s", rec.Code, rec.Body)
+		t.Fatalf("qr fragment status = %d, body=%s", rec.Code, rec.Body)
 	}
-	var qr map[string]string
-	json.Unmarshal(rec.Body.Bytes(), &qr)
-	if qr["payload"] != "exerp:checkin:2" {
-		t.Fatalf("expected refreshed payload, got %q", qr["payload"])
+	if !strings.Contains(rec.Body.String(), "exerp:checkin:2") {
+		t.Fatalf("expected refreshed payload, got:\n%s", rec.Body)
 	}
 	if len(cookies) == 0 {
 		t.Fatal("expected rotated cookie")
@@ -153,18 +263,53 @@ func TestQRRefreshRotation(t *testing.T) {
 	}
 }
 
-func TestQRPNG(t *testing.T) {
+func TestQRFragmentExpiredSessionShowsLogin(t *testing.T) {
 	s := newTestServer(t)
 	h := s.Handler()
+
+	// Expired access token with no refresh token → session is dead.
 	tok := Tokens{
 		AccessToken:  "access-1",
-		RefreshToken: "refresh-1",
+		RefreshToken: "",
 		ExpiresIn:    600,
-		IssuedAt:     time.Now().UnixMilli(),
+		IssuedAt:     time.Now().Add(-20 * time.Minute).UnixMilli(),
 		Email:        "u@e.com",
 	}
 	cookie := &http.Cookie{Name: cookieName, Value: encodeTokens(tok), Path: "/"}
-	rec, _ := doJSON(t, h, http.MethodGet, "/qr.png", "", []*http.Cookie{cookie})
+	rec, _ := doJSON(t, h, http.MethodGet, "/qr/fragment", "", []*http.Cookie{cookie})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expired fragment should be 200 to swap the view, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `id="loginView"`) || strings.Contains(body, "id=\"qrView\"") {
+		t.Fatalf("expected login view fragment, got:\n%s", body)
+	}
+	if !strings.Contains(body, "Session expired") {
+		t.Fatalf("expected expiry message, got:\n%s", body)
+	}
+}
+
+func TestLogoutClearsCookie(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+	rec, cookies := doJSON(t, h, http.MethodPost, "/auth/logout", "", []*http.Cookie{seededCookie("u@e.com")})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logout status = %d", rec.Code)
+	}
+	for _, c := range cookies {
+		if c.Name == cookieName && c.MaxAge != -1 {
+			t.Fatalf("cookie not cleared: %+v", c)
+		}
+	}
+	if !strings.Contains(rec.Body.String(), `id="loginView"`) {
+		t.Fatalf("logout should render the login fragment, got:\n%s", rec.Body)
+	}
+}
+
+func TestQRPNG(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+	rec, _ := doJSON(t, h, http.MethodGet, "/qr.png", "", []*http.Cookie{seededCookie("u@e.com")})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("qr.png status = %d, body=%s", rec.Code, rec.Body)
 	}
@@ -183,15 +328,7 @@ func TestQRPNG(t *testing.T) {
 func TestQRSVG(t *testing.T) {
 	s := newTestServer(t)
 	h := s.Handler()
-	tok := Tokens{
-		AccessToken:  "access-1",
-		RefreshToken: "refresh-1",
-		ExpiresIn:    600,
-		IssuedAt:     time.Now().UnixMilli(),
-		Email:        "u@e.com",
-	}
-	cookie := &http.Cookie{Name: cookieName, Value: encodeTokens(tok), Path: "/"}
-	rec, _ := doJSON(t, h, http.MethodGet, "/qr.svg", "", []*http.Cookie{cookie})
+	rec, _ := doJSON(t, h, http.MethodGet, "/qr.svg", "", []*http.Cookie{seededCookie("u@e.com")})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("qr.svg status = %d, body=%s", rec.Code, rec.Body)
 	}
@@ -203,64 +340,11 @@ func TestQRSVG(t *testing.T) {
 	}
 }
 
-func TestLoginValidation(t *testing.T) {
+func TestHealth(t *testing.T) {
 	s := newTestServer(t)
-	h := s.Handler()
-	// Missing @ → 400
-	rec, _ := doJSON(t, h, http.MethodPost, "/auth/login", `{"email":"nope","password":"x"}`, nil)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-	// Malformed JSON → 400
-	rec, _ = doJSON(t, h, http.MethodPost, "/auth/login", `{`, nil)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestLogoutClearsCookie(t *testing.T) {
-	s := newTestServer(t)
-	h := s.Handler()
-	tok := Tokens{AccessToken: "a", RefreshToken: "r", ExpiresIn: 600, IssuedAt: time.Now().UnixMilli(), Email: "u@e.com"}
-	cookie := &http.Cookie{Name: cookieName, Value: encodeTokens(tok), Path: "/"}
-	rec, cookies := doJSON(t, h, http.MethodPost, "/auth/logout", "", []*http.Cookie{cookie})
+	rec, _ := doJSON(t, s.Handler(), http.MethodGet, "/health", "", nil)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("logout status = %d", rec.Code)
-	}
-	for _, c := range cookies {
-		if c.Name == cookieName && c.MaxAge != -1 {
-			t.Fatalf("cookie not cleared: %+v", c)
-		}
-	}
-}
-
-func TestLoginRateLimit(t *testing.T) {
-	s := newTestServer(t)
-	// One per minute max.
-	s.limiter.perMin = 1
-	h := s.Handler()
-	for i := 0; i < 2; i++ {
-		rec, _ := doJSON(t, h, http.MethodPost, "/auth/login",
-			`{"email":"a@b.com","password":"wrong"}`, nil)
-		if i == 0 && rec.Code != http.StatusUnauthorized {
-			t.Fatalf("first failed login should be rejected by upstream, got %d", rec.Code)
-		}
-		if i == 1 && rec.Code != http.StatusTooManyRequests {
-			t.Fatalf("second failed login should be rate limited, got %d", rec.Code)
-		}
-	}
-}
-
-func TestLoginFailureDoesNotSetCookie(t *testing.T) {
-	s := newTestServer(t)
-	h := s.Handler()
-	rec, cookies := doJSON(t, h, http.MethodPost, "/auth/login",
-		`{"email":"a@b.com","password":"wrong"}`, nil)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", rec.Code)
-	}
-	if len(cookies) != 0 {
-		t.Fatalf("no cookie should be set on failure, got %v", cookies)
+		t.Fatalf("health status = %d", rec.Code)
 	}
 }
 
