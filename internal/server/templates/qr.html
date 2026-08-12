@@ -4,7 +4,7 @@
     <span class="email">{{.Email}}</span>
     <button hx-post="/auth/logout" hx-target="#app" hx-swap="innerHTML" class="secondary">Log out</button>
   </div>
-  <div id="qrWrap"><img id="qr" src="/qr.svg?t={{.Nonce}}" alt="Gym entry QR code" /></div>
+  <div id="qrWrap">{{.QR}}</div>
   <p id="status">Updated {{.Updated}}</p>
   <p id="payload">{{.Payload}}</p>
 </div>

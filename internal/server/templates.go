@@ -16,10 +16,12 @@ type loginData struct {
 	Error string
 }
 
-// qrData is the fragment state for the live QR view.
+// qrData is the fragment state for the live QR view. QR holds the SVG markup
+// rendered by the server; it is deliberately unescaped (template.HTML) because
+// the QR library only emits inert module shapes and never echoes payload text.
 type qrData struct {
 	Email   string
-	Nonce   int64
+	QR      template.HTML
 	Updated string
 	Payload string
 }

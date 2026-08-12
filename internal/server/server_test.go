@@ -133,10 +133,19 @@ func TestIndexRendersQRWhenAuthenticated(t *testing.T) {
 		t.Fatalf("index status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1", "/qr.svg?t=", `hx-get="/qr/fragment"`} {
+	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1", "<svg", `hx-get="/qr/fragment"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, `src="/qr.svg`) {
+		t.Fatalf("index should inline the SVG, not reference it by URL:\n%s", body)
+	}
+	if strings.Contains(body, "Updated Updated") {
+		t.Fatalf("status should not repeat the Updated label:\n%s", body)
+	}
+	if svg := extractTag(body, "<svg", "</svg>"); strings.Contains(svg, "exerp:checkin:1") {
+		t.Fatalf("payload must not be echoed as SVG text content:\n%s", svg)
 	}
 }
 
@@ -153,7 +162,7 @@ func TestLoginJSONSuccess(t *testing.T) {
 		t.Fatal("no Set-Cookie on login")
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1"} {
+	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1", "<svg"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("login response missing %q:\n%s", want, body)
 		}
@@ -173,7 +182,7 @@ func TestLoginFormSuccess(t *testing.T) {
 		t.Fatal("no Set-Cookie on login")
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1"} {
+	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1", "<svg"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("login response missing %q:\n%s", want, body)
 		}
@@ -355,6 +364,19 @@ func cookieValue(cookies []*http.Cookie, name string) string {
 		}
 	}
 	return ""
+}
+
+// extractTag returns the substring between start and end, or "" if not found.
+func extractTag(body, start, end string) string {
+	i := strings.Index(body, start)
+	if i < 0 {
+		return ""
+	}
+	j := strings.Index(body[i:], end)
+	if j < 0 {
+		return ""
+	}
+	return body[i : i+j+len(end)]
 }
 
 func TestCookieEncodingCompatibility(t *testing.T) {

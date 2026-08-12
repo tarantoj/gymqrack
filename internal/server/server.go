@@ -6,6 +6,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"html/template"
 	"log"
 	"net"
 	"net/http"
@@ -87,14 +88,15 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			renderPage(w, pageData{View: "login", loginData: loginData{}})
 			return
 		}
-		renderPage(w, pageData{View: "qr", qrData: qrData{
-			Email: email.Email, Nonce: time.Now().UnixMilli(), Updated: "Could not refresh QR",
-		}})
+		renderPage(w, pageData{View: "qr", qrData: qrData{Email: email.Email, Updated: "Could not refresh QR"}})
 		return
 	}
-	renderPage(w, pageData{View: "qr", qrData: qrData{
-		Email: email.Email, Nonce: time.Now().UnixMilli(), Updated: "Updated " + time.Now().Format(time.Kitchen), Payload: payload,
-	}})
+	d, err := qrView(email.Email, payload)
+	if err != nil {
+		renderPage(w, pageData{View: "qr", qrData: qrData{Email: email.Email, Updated: "Could not refresh QR"}})
+		return
+	}
+	renderPage(w, pageData{View: "qr", qrData: d})
 }
 
 func (s *Server) clientIP(r *http.Request) string {
@@ -170,16 +172,33 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	renderLogin(w, loginData{})
 }
 
+// qrView builds the QR fragment state, rendering the payload as an inline SVG
+// so the fragment needs no follow-up image request.
+func qrView(email, payload string) (qrData, error) {
+	svg, err := qr.SVG(payload)
+	if err != nil {
+		return qrData{}, err
+	}
+	return qrData{
+		Email:   email,
+		QR:      template.HTML(svg),
+		Updated: time.Now().Format(time.Kitchen),
+		Payload: payload,
+	}, nil
+}
+
 // renderQRView renders the QR fragment, fetching the payload with the given
 // fresh access token and falling back to a transient status on failure.
 func (s *Server) renderQRView(w http.ResponseWriter, r *http.Request, email, accessToken string) {
 	payload, err := s.client.FetchQr(r.Context(), accessToken)
-	d := qrData{Email: email, Nonce: time.Now().UnixMilli()}
 	if err != nil {
-		d.Updated = "Could not refresh QR"
-	} else {
-		d.Updated = "Updated " + time.Now().Format(time.Kitchen)
-		d.Payload = payload
+		renderQR(w, qrData{Email: email, Updated: "Could not refresh QR"})
+		return
+	}
+	d, err := qrView(email, payload)
+	if err != nil {
+		renderQR(w, qrData{Email: email, Updated: "Could not refresh QR"})
+		return
 	}
 	renderQR(w, d)
 }
@@ -262,13 +281,16 @@ func (s *Server) handleQRFragment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		email, _ := readTokens(r)
-		renderQR(w, qrData{Email: email.Email, Nonce: time.Now().UnixMilli(), Updated: "Could not refresh QR"})
+		renderQR(w, qrData{Email: email.Email, Updated: "Could not refresh QR"})
 		return
 	}
 	email, _ := readTokens(r)
-	renderQR(w, qrData{
-		Email: email.Email, Nonce: time.Now().UnixMilli(), Updated: "Updated " + time.Now().Format(time.Kitchen), Payload: payload,
-	})
+	d, err := qrView(email.Email, payload)
+	if err != nil {
+		renderQR(w, qrData{Email: email.Email, Updated: "Could not refresh QR"})
+		return
+	}
+	renderQR(w, d)
 }
 
 func (s *Server) handleQRPNG(w http.ResponseWriter, r *http.Request) {
