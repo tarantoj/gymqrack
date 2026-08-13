@@ -390,6 +390,40 @@ func TestServiceWorkerIsNotCacheable(t *testing.T) {
 	}
 }
 
+func TestDirectoryListingDisabled(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.js"), []byte("console.log(1);\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "icons"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "icons", "icon-192.png"), []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := New(Config{PublicURL: "http://localhost:4567", PublicDir: dir})
+	h := s.Handler()
+
+	for _, path := range []string{"/icons", "/icons/"} {
+		rec, _ := doJSON(t, h, http.MethodGet, path, "", nil)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s: status = %d, want 404 (no directory listing)", path, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "index of") || strings.Contains(rec.Body.String(), "<pre>") {
+			t.Fatalf("%s: response contains a directory listing:\n%s", path, rec.Body)
+		}
+	}
+
+	rec, _ := doJSON(t, h, http.MethodGet, "/app.js", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("file should still be served, got %d", rec.Code)
+	}
+	rec, _ = doJSON(t, h, http.MethodGet, "/icons/icon-192.png", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("nested file should still be served, got %d", rec.Code)
+	}
+}
+
 func cookieValue(cookies []*http.Cookie, name string) string {
 	for _, c := range cookies {
 		if c.Name == name {

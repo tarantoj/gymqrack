@@ -66,7 +66,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /qr/fragment", s.handleQRFragment)
 	if s.cfg.PublicDir != "" {
-		files := http.FileServer(http.Dir(s.cfg.PublicDir))
+		files := http.FileServer(noListingFS{http.Dir(s.cfg.PublicDir)})
 		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Service workers must never be long-cached: browsers only replace
 			// a SW when /sw.js bytes change, so an edge-cached copy (e.g.
@@ -87,6 +87,30 @@ func (s *Server) Handler() http.Handler {
 		}))
 	}
 	return s.logRequests(mux)
+}
+
+// noListingFS is an http.FileSystem that 404s directory opens, disabling the
+// default directory listing served by http.FileServer. Files (including
+// index.html) are served normally.
+type noListingFS struct {
+	fs http.FileSystem
+}
+
+func (n noListingFS) Open(name string) (http.File, error) {
+	f, err := n.fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	if info.IsDir() {
+		f.Close()
+		return nil, os.ErrNotExist
+	}
+	return f, nil
 }
 
 // swETag returns a strong content-hash ETag for the service worker file, or ""
