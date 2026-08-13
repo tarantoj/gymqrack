@@ -5,6 +5,8 @@
 //	GYMQRACK_CLIENT_ID, GYMQRACK_CLIENT_SECRET (required)
 //	GYMQRACK_LOCALE, PORT, HOST, PUBLIC_URL (optional)
 //	COOKIE_MAX_AGE_DAYS, LOGIN_RATE_PER_MIN, TRUST_PROXY (optional)
+//	SOCKET, SOCKET_GID (optional; overrides HOST/PORT with a unix socket;
+//	SOCKET_GID is a numeric gid or group name owning the socket)
 //
 // Logging: structured JSON logs go to stderr.
 package main
@@ -14,9 +16,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -75,9 +79,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	addr := fmt.Sprintf("%s:%d", host, port)
 	httpServer := &http.Server{
-		Addr:              addr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -85,9 +87,28 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	var ln net.Listener
+	if sock := os.Getenv("SOCKET"); sock != "" {
+		var err error
+		ln, err = listenUnix(sock, os.Getenv("SOCKET_GID"))
+		if err != nil {
+			slog.Error("cannot listen on unix socket", "socket", sock, "error", err)
+			os.Exit(1)
+		}
+	} else {
+		addr := fmt.Sprintf("%s:%d", host, port)
+		httpServer.Addr = addr
+		var err error
+		ln, err = net.Listen("tcp", addr)
+		if err != nil {
+			slog.Error("cannot listen", "addr", addr, "error", err)
+			os.Exit(1)
+		}
+	}
+
 	go func() {
-		slog.Info("gymqrack live QR running", "url", publicURL, "addr", addr)
-		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		slog.Info("gymqrack live QR running", "url", publicURL, "addr", ln.Addr())
+		if err := httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("server failed", "error", err)
 			stop()
 		}
@@ -100,6 +121,49 @@ func main() {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		slog.Error("graceful shutdown failed", "error", err)
 	}
+}
+
+// listenUnix binds an HTTP listener on a unix socket. It removes a stale
+// socket file, creates the parent directory, and when group (a numeric gid or
+// group name, e.g. "nginx") is non-empty chowns the socket to that group with
+// mode 0o660 so a same-host reverse proxy sharing the group can connect.
+func listenUnix(path, group string) (net.Listener, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return nil, err
+	}
+	_ = os.Remove(path)
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(path, 0o660); err != nil {
+		ln.Close()
+		return nil, err
+	}
+	if group != "" {
+		gid, err := lookupGID(group)
+		if err != nil {
+			ln.Close()
+			return nil, err
+		}
+		if err := os.Chown(path, -1, gid); err != nil {
+			ln.Close()
+			return nil, err
+		}
+	}
+	return ln, nil
+}
+
+// lookupGID resolves a numeric gid string or a group name to a numeric gid.
+func lookupGID(group string) (int, error) {
+	if gid, err := strconv.Atoi(group); err == nil {
+		return gid, nil
+	}
+	g, err := user.LookupGroup(group)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(g.Gid)
 }
 
 // publicDir locates the web UI directory next to the binary (nix build) or in

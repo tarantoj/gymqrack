@@ -19,7 +19,18 @@
 #
 # Users authenticate through the web UI (email + password); the server is a
 # stateless proxy and never stores their credentials. Put it behind a reverse
-# proxy (nginx/caddy) to expose it over HTTPS.
+# proxy (nginx/caddy) to expose it over HTTPS. It can listen on a unix socket
+# shared with a same-host, same-group reverse proxy:
+#
+#   services.gymqrack = {
+#     enable = true;
+#     publicUrl = "https://qr.example.com";
+#     trustProxy = true;
+#     unixSocket = "/run/gymqrack/gymqrack.sock";
+#     unixSocketGroup = "nginx";
+#     clientId = "your-client-id";
+#     clientSecret = "your-client-secret";
+#   };
 
 {
   config,
@@ -45,13 +56,25 @@ in
     host = lib.mkOption {
       type = lib.types.str;
       default = "127.0.0.1";
-      description = "Address to bind. Expose over a reverse proxy, not publicly.";
+      description = "Address to bind. Expose over a reverse proxy, not publicly. Ignored when unixSocket is set.";
     };
 
     port = lib.mkOption {
       type = lib.types.port;
       default = 4567;
-      description = "Port to listen on.";
+      description = "Port to listen on. Ignored when unixSocket is set.";
+    };
+
+    unixSocket = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Path to a unix socket to listen on instead of host/port, e.g. /run/gymqrack/gymqrack.sock. Useful when sharing the socket with a same-host reverse proxy in unixSocketGroup.";
+    };
+
+    unixSocketGroup = lib.mkOption {
+      type = lib.types.str;
+      default = "nginx";
+      description = "Group owning the unix socket so a same-host reverse proxy can connect. Ignored when unixSocket is null.";
     };
 
     publicUrl = lib.mkOption {
@@ -81,7 +104,7 @@ in
     trustProxy = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Honor X-Forwarded-For for login rate limiting (set behind a reverse proxy).";
+      description = "Honor X-Forwarded-For for login rate limiting (set behind a reverse proxy). Required when using unixSocket, since a socket peer address carries no client IP.";
     };
 
     clientId = lib.mkOption {
@@ -121,36 +144,56 @@ in
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
 
-      serviceConfig = {
-        Type = "simple";
-        ExecStart = "${cfg.package}/bin/gymqrack";
-        DynamicUser = true;
-        Restart = "on-failure";
-        RestartSec = 5;
-        EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
-        Environment = [
-          "GYMQRACK_LOCALE=${cfg.locale}"
-          "PORT=${toString cfg.port}"
-          "HOST=${cfg.host}"
-          "PUBLIC_URL=${cfg.publicUrl}"
-          "LOGIN_RATE_PER_MIN=${toString cfg.loginRatePerMinute}"
-          "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
-          "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
-        ]
-        ++ lib.optional (cfg.clientId != null) "GYMQRACK_CLIENT_ID=${cfg.clientId}"
-        ++ lib.optional (cfg.clientSecret != null) "GYMQRACK_CLIENT_SECRET=${cfg.clientSecret}";
-        NoNewPrivileges = true;
-        PrivateTmp = true;
-        ProtectHome = true;
-        ProtectSystem = "strict";
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectControlGroups = true;
-        RestrictAddressFamilies = [
-          "AF_INET"
-          "AF_INET6"
-        ];
-      };
+      serviceConfig =
+        let
+          listenEnv =
+            if cfg.unixSocket != null then
+              [
+                "SOCKET=${cfg.unixSocket}"
+                "SOCKET_GID=${cfg.unixSocketGroup}"
+              ]
+            else
+              [
+                "PORT=${toString cfg.port}"
+                "HOST=${cfg.host}"
+              ];
+        in
+        {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/gymqrack";
+          DynamicUser = true;
+          Restart = "on-failure";
+          RestartSec = 5;
+          EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
+          Environment = [
+            "GYMQRACK_LOCALE=${cfg.locale}"
+            "PUBLIC_URL=${cfg.publicUrl}"
+            "LOGIN_RATE_PER_MIN=${toString cfg.loginRatePerMinute}"
+            "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
+            "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
+          ]
+          ++ listenEnv
+          ++ lib.optional (cfg.clientId != null) "GYMQRACK_CLIENT_ID=${cfg.clientId}"
+          ++ lib.optional (cfg.clientSecret != null) "GYMQRACK_CLIENT_SECRET=${cfg.clientSecret}";
+          RuntimeDirectory = lib.mkIf (cfg.unixSocket != null) "gymqrack";
+          # 0775: the runtime dir is owned by the dynamic service group, but the
+          # reverse proxy must traverse it to reach the socket. The socket file
+          # itself stays 0660 chowned to unixSocketGroup.
+          RuntimeDirectoryMode = lib.mkIf (cfg.unixSocket != null) "0775";
+          SupplementaryGroups = lib.mkIf (cfg.unixSocket != null) [ cfg.unixSocketGroup ];
+          NoNewPrivileges = true;
+          PrivateTmp = true;
+          ProtectHome = true;
+          ProtectSystem = "strict";
+          ProtectKernelTunables = true;
+          ProtectKernelModules = true;
+          ProtectControlGroups = true;
+          RestrictAddressFamilies = [
+            "AF_INET"
+            "AF_INET6"
+          ]
+          ++ lib.optional (cfg.unixSocket != null) "AF_UNIX";
+        };
     };
   };
 }

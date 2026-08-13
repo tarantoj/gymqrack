@@ -56,6 +56,23 @@ NixOS module:
 }
 ```
 
+Listening on a unix socket (shared with a same-host, same-group reverse proxy
+like nginx) instead of a TCP port:
+
+```nix
+services.gymqrack = {
+  enable = true;
+  publicUrl = "https://qr.example.com";
+  trustProxy = true;                       # required: socket peers carry no IP
+  unixSocket = "/run/gymqrack/gymqrack.sock";
+  unixSocketGroup = "nginx";
+};
+```
+
+The socket is created mode `0660` and chowned to `unixSocketGroup`, with the
+service joining that group so the chown succeeds. Point nginx at it, e.g.
+`proxy_pass http://unix:/run/gymqrack/gymqrack.sock;`.
+
 ## Layout
 
 ```
