@@ -346,6 +346,40 @@ func TestServiceWorkerIsNotCacheable(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "const CACHE = \"v2\"") {
 		t.Fatalf("unexpected sw.js body:\n%s", rec.Body)
 	}
+	if etag := rec.Header().Get("Etag"); etag == "" {
+		t.Fatal("sw.js should carry a content-hash ETag")
+	}
+
+	// Revalidation with a matching ETag must 304.
+	rec, _ = doJSON(t, h, http.MethodGet, "/sw.js", "", nil)
+	etag := rec.Header().Get("Etag")
+	req := httptest.NewRequest(http.MethodGet, "/sw.js", nil)
+	req.Header.Set("If-None-Match", etag)
+	rec304 := httptest.NewRecorder()
+	h.ServeHTTP(rec304, req)
+	if rec304.Code != http.StatusNotModified {
+		t.Fatalf("If-None-Match with current ETag: status = %d, want 304", rec304.Code)
+	}
+
+	// Changing the bytes must change the ETag, so revalidation returns 200.
+	if err := os.WriteFile(filepath.Join(dir, "sw.js"), []byte("const CACHE = \"v3\";\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec, _ = doJSON(t, h, http.MethodGet, "/sw.js", "", nil)
+	newEtag := rec.Header().Get("Etag")
+	if newEtag == "" || newEtag == etag {
+		t.Fatalf("ETag did not change after content changed: old=%q new=%q", etag, newEtag)
+	}
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "v3") {
+		t.Fatalf("expected updated sw.js body, got status=%d:\n%s", rec.Code, rec.Body)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/sw.js", nil)
+	req.Header.Set("If-None-Match", etag)
+	rec200 := httptest.NewRecorder()
+	h.ServeHTTP(rec200, req)
+	if rec200.Code != http.StatusOK {
+		t.Fatalf("stale If-None-Match should revalidate to 200, got %d", rec200.Code)
+	}
 
 	// Other static assets should not carry the no-cache header.
 	for _, path := range []string{"/app.js", "/nope.js"} {

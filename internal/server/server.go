@@ -4,12 +4,17 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -67,13 +72,32 @@ func (s *Server) Handler() http.Handler {
 			// a SW when /sw.js bytes change, so an edge-cached copy (e.g.
 			// Cloudflare's 4h default for .js) would delay updates like the
 			// icon cache bump indefinitely. Force revalidation instead.
+			//
+			// Nix store files share one epoch mtime, so Last-Modified cannot
+			// distinguish versions; a content-hash ETag can. ServeContent
+			// honors a pre-set ETag for If-None-Match, returning 304 only when
+			// the bytes actually match.
 			if r.URL.Path == "/sw.js" {
 				w.Header().Set("Cache-Control", "no-cache")
+				if etag := swETag(s.cfg.PublicDir); etag != "" {
+					w.Header().Set("Etag", etag)
+				}
 			}
 			files.ServeHTTP(w, r)
 		}))
 	}
 	return s.logRequests(mux)
+}
+
+// swETag returns a strong content-hash ETag for the service worker file, or ""
+// if it cannot be read.
+func swETag(dir string) string {
+	data, err := os.ReadFile(filepath.Join(dir, "sw.js"))
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%q", hex.EncodeToString(sum[:]))
 }
 
 // logRequests logs one structured line per request.
