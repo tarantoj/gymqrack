@@ -30,7 +30,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coreos/go-systemd/v22/journal"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -51,21 +50,6 @@ func envInt(name string, def int) int {
 		slog.Warn("invalid env value, using default", "env", name, "value", v, "default", def)
 	}
 	return def
-}
-
-// newLogHandler returns the process's structured logger. Under a systemd
-// service it writes to the journal over its native socket (structured fields
-// + correct priority); everywhere else it falls back to JSON on stderr.
-// VIVAGYM_LOG_FORMAT=json forces JSON even under systemd.
-func newLogHandler() slog.Handler {
-	jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
-	if os.Getenv("VIVAGYM_LOG_FORMAT") == "json" {
-		return jsonHandler
-	}
-	if journal.Enabled() {
-		return newJournaldHandler(journal.Send)
-	}
-	return jsonHandler
 }
 
 // newTracerProvider sets up the global OpenTelemetry tracer provider. Spans go
