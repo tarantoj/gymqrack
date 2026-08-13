@@ -8,8 +8,13 @@
 //
 // OpenTelemetry: traces go to the OTLP HTTP collector at
 // OTEL_EXPORTER_OTLP_ENDPOINT when set, otherwise to stdout. Set
-// OTEL_SERVICE_NAME (default vivagym-wallet) or OTEL_SDK_DISABLED=1 to turn
-// tracing off. Standard OTEL_EXPORTER_OTLP_* env vars apply.
+// OTEL_SERVICE_NAME (default vivagym-wallet), OTEL_TRACES_EXPORTER
+// (none|otlp|console) or OTEL_SDK_DISABLED=1 to control tracing. Standard
+// OTEL_EXPORTER_OTLP_* env vars apply.
+//
+// Logging: structured logs go to the systemd journal via the native protocol
+// when running as a systemd service, and fall back to JSON on stderr
+// otherwise. Set VIVAGYM_LOG_FORMAT=json to force JSON output.
 package main
 
 import (
@@ -25,6 +30,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coreos/go-systemd/v22/journal"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -47,15 +53,34 @@ func envInt(name string, def int) int {
 	return def
 }
 
+// newLogHandler returns the process's structured logger. Under a systemd
+// service it writes to the journal over its native socket (structured fields
+// + correct priority); everywhere else it falls back to JSON on stderr.
+// VIVAGYM_LOG_FORMAT=json forces JSON even under systemd.
+func newLogHandler() slog.Handler {
+	jsonHandler := slog.NewJSONHandler(os.Stderr, nil)
+	if os.Getenv("VIVAGYM_LOG_FORMAT") == "json" {
+		return jsonHandler
+	}
+	if journal.Enabled() {
+		return newJournaldHandler(journal.Send)
+	}
+	return jsonHandler
+}
+
 // newTracerProvider sets up the global OpenTelemetry tracer provider. Spans go
 // to the OTLP HTTP endpoint from OTEL_EXPORTER_OTLP_ENDPOINT when configured,
-// otherwise they are printed to stdout. Returns a no-op provider (and a no-op
-// shutdown) when tracing is disabled.
+// otherwise they are printed to stdout. The standard OTEL_TRACES_EXPORTER env
+// var (none|otlp|console) overrides the default choice. Returns a no-op
+// provider (and a no-op shutdown) when tracing is disabled.
 func newTracerProvider() (*sdktrace.TracerProvider, func(context.Context) error) {
 	noop := func(context.Context) error { return nil }
 	if os.Getenv("OTEL_SDK_DISABLED") == "1" {
 		return sdktrace.NewTracerProvider(), noop
 	}
+
+	exporterName := os.Getenv("OTEL_TRACES_EXPORTER")
+	endpointSet := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != ""
 
 	serviceName := os.Getenv("OTEL_SERVICE_NAME")
 	if serviceName == "" {
@@ -65,10 +90,16 @@ func newTracerProvider() (*sdktrace.TracerProvider, func(context.Context) error)
 
 	var exporter sdktrace.SpanExporter
 	var err error
-	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+	switch {
+	case exporterName == "none":
+		return sdktrace.NewTracerProvider(), noop
+	case exporterName == "otlp" || (exporterName == "" && endpointSet):
 		exporter, err = otlptracehttp.New(context.Background())
-	} else {
+	case exporterName == "console" || exporterName == "stdout" || exporterName == "":
 		exporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
+	default:
+		slog.Error("unknown OTEL_TRACES_EXPORTER, tracing disabled", "value", exporterName)
+		return sdktrace.NewTracerProvider(), noop
 	}
 	if err != nil {
 		slog.Error("failed to create trace exporter, tracing disabled", "error", err)
@@ -90,7 +121,7 @@ func newTracerProvider() (*sdktrace.TracerProvider, func(context.Context) error)
 }
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	slog.SetDefault(slog.New(newLogHandler()))
 
 	port := envInt("PORT", 4567)
 	host := os.Getenv("HOST")

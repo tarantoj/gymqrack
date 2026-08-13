@@ -149,6 +149,9 @@ in
             "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
             "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
             "OTEL_SERVICE_NAME=${cfg.telemetryServiceName}"
+            # No collector endpoint -> keep spans out of journald; logs carry
+            # trace_ids for correlation instead.
+            "OTEL_TRACES_EXPORTER=${if cfg.telemetryOtlpEndpoint != null then "otlp" else "none"}"
           ]
           ++ lib.optional (cfg.telemetryOtlpEndpoint != null) "OTEL_EXPORTER_OTLP_ENDPOINT=${cfg.telemetryOtlpEndpoint}"
           ++ lib.optional (cfg.clientId != null) "VIVAGYM_CLIENT_ID=${cfg.clientId}"

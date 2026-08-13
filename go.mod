@@ -3,6 +3,7 @@ module vivagym
 go 1.26.5
 
 require (
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/piglig/go-qr v1.1.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0
 	go.opentelemetry.io/otel v1.45.0
