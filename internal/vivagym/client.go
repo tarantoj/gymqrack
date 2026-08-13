@@ -146,11 +146,7 @@ func (c *Client) Login(ctx context.Context, email, password string) (TokenPair, 
 	if resp.ExpiresIn == 0 {
 		resp.ExpiresIn = 600
 	}
-	return TokenPair{
-		AccessToken:  resp.AccessToken,
-		RefreshToken: resp.RefreshToken,
-		ExpiresIn:    resp.ExpiresIn,
-	}, nil
+	return TokenPair(resp), nil
 }
 
 // RefreshTokens renews the access token using the refresh token.
@@ -173,11 +169,7 @@ func (c *Client) RefreshTokens(ctx context.Context, refreshToken string) (TokenP
 	if resp.RefreshToken == "" {
 		resp.RefreshToken = refreshToken
 	}
-	return TokenPair{
-		AccessToken:  resp.AccessToken,
-		RefreshToken: resp.RefreshToken,
-		ExpiresIn:    resp.ExpiresIn,
-	}, nil
+	return TokenPair(resp), nil
 }
 
 // FetchQr returns the gym-entry QR payload for the given access token. The API

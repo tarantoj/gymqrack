@@ -13,11 +13,23 @@ in
   languages.go.lsp.enable = true;
 
   packages = with pkgs; [
+    git # needed by the git-hooks (pre-commit) runner
     vivagymAccess # nix-built server (bin: vivagym-access)
   ];
 
   processes.dev.exec = "go run ./cmd/vivagym-access";
   processes.server.exec = "${vivagymAccess}/bin/vivagym-access";
+
+  git-hooks.hooks = {
+    # Format Go source with gofmt.
+    gofmt.enable = true;
+    # Run `go vet` correctness checks.
+    govet.enable = true;
+    # Run the staticcheck static analyzer.
+    staticcheck.enable = true;
+    # Run the test suite for modified packages.
+    gotest.enable = true;
+  };
 
   enterShell = ''
     echo "VivaGym Access dev shell"

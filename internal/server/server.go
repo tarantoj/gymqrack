@@ -286,7 +286,7 @@ func unauthorized(err error) bool {
 func (s *Server) qrResult(w http.ResponseWriter, r *http.Request) (string, int, error) {
 	t, ok := s.validTokens(w, r)
 	if !ok {
-		return "", http.StatusUnauthorized, errors.New("Not authenticated")
+		return "", http.StatusUnauthorized, errors.New("not authenticated")
 	}
 
 	payload, err := s.cfg.VivaGymClient.FetchQr(r.Context(), t.AccessToken)
@@ -304,7 +304,7 @@ func (s *Server) qrResult(w http.ResponseWriter, r *http.Request) (string, int, 
 	}
 	if unauthorized(err) {
 		s.clearTokens(w)
-		return "", http.StatusUnauthorized, errors.New("Session expired, log in again")
+		return "", http.StatusUnauthorized, errors.New("session expired, log in again")
 	}
 	return "", http.StatusBadGateway, err
 }
@@ -320,20 +320,4 @@ func (s *Server) handleQRFragment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderQR(w, *v.qr)
-}
-
-func (s *Server) handleQRSVG(w http.ResponseWriter, r *http.Request) {
-	payload, status, err := s.qrResult(w, r)
-	if err != nil {
-		http.Error(w, err.Error(), status)
-		return
-	}
-	svg, err := qr.SVG(payload)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	w.Header().Set("Content-Type", "image/svg+xml")
-	w.WriteHeader(http.StatusOK)
-	w.Write(svg)
 }

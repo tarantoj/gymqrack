@@ -9,8 +9,7 @@ import (
 
 func newTestClient(t *testing.T) (*Client, *httptest.Server) {
 	t.Helper()
-	var upstream *httptest.Server
-	upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/oauth/v2/token":
 			json.NewEncoder(w).Encode(map[string]string{"access_token": "temp-token"})
