@@ -61,7 +61,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /qr/fragment", s.handleQRFragment)
 	if s.cfg.PublicDir != "" {
-		mux.Handle("/", http.FileServer(http.Dir(s.cfg.PublicDir)))
+		files := http.FileServer(http.Dir(s.cfg.PublicDir))
+		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Service workers must never be long-cached: browsers only replace
+			// a SW when /sw.js bytes change, so an edge-cached copy (e.g.
+			// Cloudflare's 4h default for .js) would delay updates like the
+			// icon cache bump indefinitely. Force revalidation instead.
+			if r.URL.Path == "/sw.js" {
+				w.Header().Set("Cache-Control", "no-cache")
+			}
+			files.ServeHTTP(w, r)
+		}))
 	}
 	return s.logRequests(mux)
 }

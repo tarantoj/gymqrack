@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -320,6 +322,37 @@ func TestHealth(t *testing.T) {
 	rec, _ := doJSON(t, s.Handler(), http.MethodGet, "/health", "", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("health status = %d", rec.Code)
+	}
+}
+
+func TestServiceWorkerIsNotCacheable(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "sw.js"), []byte("const CACHE = \"v2\";\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "app.js"), []byte("console.log(\"test\");\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := New(Config{PublicURL: "http://localhost:4567", PublicDir: dir})
+	h := s.Handler()
+
+	rec, _ := doJSON(t, h, http.MethodGet, "/sw.js", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sw.js status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("sw.js Cache-Control = %q, want no-cache", got)
+	}
+	if !strings.Contains(rec.Body.String(), "const CACHE = \"v2\"") {
+		t.Fatalf("unexpected sw.js body:\n%s", rec.Body)
+	}
+
+	// Other static assets should not carry the no-cache header.
+	for _, path := range []string{"/app.js", "/nope.js"} {
+		rec, _ := doJSON(t, h, http.MethodGet, path, "", nil)
+		if got := rec.Header().Get("Cache-Control"); got == "no-cache" {
+			t.Fatalf("%s unexpectedly has Cache-Control: no-cache", path)
+		}
 	}
 }
 
