@@ -1,4 +1,7 @@
-{ pkgs, lib, config, inputs, ... }:
+{
+  pkgs,
+  ...
+}:
 
 let
   vivagymAccess = pkgs.callPackage ./package.nix { };
@@ -29,6 +32,21 @@ in
     staticcheck.enable = true;
     # Run the test suite for modified packages.
     gotest.enable = true;
+    # Format Nix files (RFC 166 style).
+    nixfmt-rfc-style.enable = true;
+    # Find dead code in Nix files.
+    deadnix.enable = true;
+    # Lint Nix files.
+    statix.enable = true;
+    # Format JavaScript/TypeScript.
+    oxfmt.enable = true;
+    # Lint JavaScript/TypeScript.
+    oxlint.enable = true;
+    # Validate JSON syntax.
+    check-json.enable = true;
+    # htmx.min.js is a vendored minified library; never reformat or lint it.
+    oxfmt.excludes = [ "htmx\\.min\\.js$" ];
+    oxlint.excludes = [ "htmx\\.min\\.js$" ];
   };
 
   enterShell = ''

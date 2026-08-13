@@ -21,7 +21,12 @@
 # stateless proxy and never stores their credentials. Put it behind a reverse
 # proxy (nginx/caddy) to expose it over HTTPS.
 
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
   cfg = config.services.vivagym-access;
@@ -123,18 +128,17 @@ in
         Restart = "on-failure";
         RestartSec = 5;
         EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
-        Environment =
-          [
-            "VIVAGYM_LOCALE=${cfg.locale}"
-            "PORT=${toString cfg.port}"
-            "HOST=${cfg.host}"
-            "PUBLIC_URL=${cfg.publicUrl}"
-            "LOGIN_RATE_PER_MIN=${toString cfg.loginRatePerMinute}"
-            "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
-            "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
-          ]
-          ++ lib.optional (cfg.clientId != null) "VIVAGYM_CLIENT_ID=${cfg.clientId}"
-          ++ lib.optional (cfg.clientSecret != null) "VIVAGYM_CLIENT_SECRET=${cfg.clientSecret}";
+        Environment = [
+          "VIVAGYM_LOCALE=${cfg.locale}"
+          "PORT=${toString cfg.port}"
+          "HOST=${cfg.host}"
+          "PUBLIC_URL=${cfg.publicUrl}"
+          "LOGIN_RATE_PER_MIN=${toString cfg.loginRatePerMinute}"
+          "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
+          "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
+        ]
+        ++ lib.optional (cfg.clientId != null) "VIVAGYM_CLIENT_ID=${cfg.clientId}"
+        ++ lib.optional (cfg.clientSecret != null) "VIVAGYM_CLIENT_SECRET=${cfg.clientSecret}";
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectHome = true;
@@ -142,7 +146,10 @@ in
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;
-        RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+        ];
       };
     };
   };
