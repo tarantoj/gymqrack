@@ -1,13 +1,13 @@
-# Builds the VivaGym wallet server (Go) into a runnable nix package. The
-# resulting derivation installs `vivagym-wallet` and `make-pass` binaries and
-# the static web UI. Runtime config comes from environment variables
+# Builds the VivaGym access server (Go) into a runnable nix package. The
+# resulting derivation installs the `vivagym-access` binary and the static web
+# UI. Runtime config comes from environment variables
 # (VIVAGYM_CLIENT_ID, VIVAGYM_CLIENT_SECRET, VIVAGYM_LOCALE, PORT, PUBLIC_URL,
 # COOKIE_MAX_AGE_DAYS, LOGIN_RATE_PER_MIN, TRUST_PROXY).
 
-{ lib, buildGoModule, openssl, makeWrapper }:
+{ lib, buildGoModule }:
 
 buildGoModule {
-  pname = "vivagym-wallet";
+  pname = "vivagym-access";
   version = "0.2.0";
 
   src = lib.fileset.toSource {
@@ -21,24 +21,17 @@ buildGoModule {
     ];
   };
 
-  vendorHash = "sha256-MwDuShuH+yxd7+NIwU4XuAHz5fdsO3oO7HH6hLRpbPM=";
-
-  nativeBuildInputs = [ makeWrapper ];
-
-  # openssl is only used at runtime by make-pass (PKCS#7 pass signing).
-  buildInputs = [ openssl ];
+  vendorHash = "sha256-j3eeyLBQ1fBpnQtf6+pyXSQ9mdUKSj5soQd6JT47PpM=";
 
   postInstall = ''
-    mkdir -p $out/share/vivagym-wallet
-    cp -r public $out/share/vivagym-wallet/public
-    wrapProgram $out/bin/make-pass \
-      --prefix PATH : ${openssl}/bin
+    mkdir -p $out/share/vivagym-access
+    cp -r public $out/share/vivagym-access/public
   '';
 
   meta = {
-    description = "VivaGym gym-entry live QR server (Wallet launcher)";
+    description = "VivaGym gym-entry live QR server";
     homepage = "https://github.com/";
     license = lib.licenses.mit;
-    mainProgram = "vivagym-wallet";
+    mainProgram = "vivagym-access";
   };
 }

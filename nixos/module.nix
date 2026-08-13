@@ -1,24 +1,20 @@
-# NixOS module to run the VivaGym Wallet live-QR server as a systemd service.
+# NixOS module to run the VivaGym Access live-QR server as a systemd service.
 #
 # Example usage:
 #
 #   {
-#     inputs.vivagym-wallet.url = "github:you/vivagym-wallet";
+#     inputs.vivagym-access.url = "github:you/vivagym-access";
 #     ...
 #   }
 #
-#   services.vivagym-wallet = {
+#   services.vivagym-access = {
 #     enable = true;
 #     publicUrl = "https://qr.example.com";
 #     trustProxy = true;
 #     clientId = "your-client-id";
 #     clientSecret = "your-client-secret";
 #     # or load VIVAGYM_CLIENT_ID / VIVAGYM_CLIENT_SECRET from a root-owned file:
-#     # environmentFile = "/run/secrets/vivagym-wallet.env";
-#     # telemetry (optional): export OpenTelemetry traces to an OTLP collector,
-#     # otherwise they go to stdout.
-#     # telemetryOtlpEndpoint = "https://collector.example.com:4318";
-#     # telemetryServiceName = "vivagym-wallet";
+#     # environmentFile = "/run/secrets/vivagym-access.env";
 #   };
 #
 # Users authenticate through the web UI (email + password); the server is a
@@ -28,17 +24,17 @@
 { config, lib, pkgs, ... }:
 
 let
-  cfg = config.services.vivagym-wallet;
+  cfg = config.services.vivagym-access;
 in
 {
-  options.services.vivagym-wallet = {
-    enable = lib.mkEnableOption "the VivaGym Wallet live-QR server";
+  options.services.vivagym-access = {
+    enable = lib.mkEnableOption "the VivaGym Access live-QR server";
 
     package = lib.mkOption {
       type = lib.types.package;
       default = pkgs.callPackage ../package.nix { };
       defaultText = lib.literalExpression "pkgs.callPackage ../package.nix { }";
-      description = "Package providing the vivagym-wallet server.";
+      description = "Package providing the vivagym-access server.";
     };
 
     host = lib.mkOption {
@@ -56,7 +52,7 @@ in
     publicUrl = lib.mkOption {
       type = lib.types.str;
       default = "http://localhost:4567";
-      description = "Public base URL of the live-QR page (served to the wallet pass / UI).";
+      description = "Public base URL of the live-QR page (served to the web UI).";
     };
 
     locale = lib.mkOption {
@@ -98,19 +94,7 @@ in
     environmentFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;
-      description = "File (e.g. /run/secrets/vivagym-wallet.env) holding VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET, loaded by systemd. Alternative to setting clientId/clientSecret as options.";
-    };
-
-    telemetryOtlpEndpoint = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "OTLP HTTP collector endpoint. When set, OpenTelemetry traces are exported to it; otherwise they are written to stdout. Exporter headers can be set via OTEL_EXPORTER_OTLP_HEADERS in environmentFile.";
-    };
-
-    telemetryServiceName = lib.mkOption {
-      type = lib.types.str;
-      default = "vivagym-wallet";
-      description = "OpenTelemetry service name (OTEL_SERVICE_NAME).";
+      description = "File (e.g. /run/secrets/vivagym-access.env) holding VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET, loaded by systemd. Alternative to setting clientId/clientSecret as options.";
     };
   };
 
@@ -118,23 +102,23 @@ in
     assertions = [
       {
         assertion = (cfg.clientId != null) == (cfg.clientSecret != null);
-        message = "services.vivagym-wallet: set both clientId and clientSecret, or neither (use environmentFile instead).";
+        message = "services.vivagym-access: set both clientId and clientSecret, or neither (use environmentFile instead).";
       }
       {
         assertion = cfg.clientId != null || cfg.environmentFile != null;
-        message = "services.vivagym-wallet: clientId and clientSecret must be set, or environmentFile must point to a file containing VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET.";
+        message = "services.vivagym-access: clientId and clientSecret must be set, or environmentFile must point to a file containing VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET.";
       }
     ];
 
-    systemd.services.vivagym-wallet = {
-      description = "VivaGym Wallet live-QR server";
+    systemd.services.vivagym-access = {
+      description = "VivaGym Access live-QR server";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${cfg.package}/bin/vivagym-wallet";
+        ExecStart = "${cfg.package}/bin/vivagym-access";
         DynamicUser = true;
         Restart = "on-failure";
         RestartSec = 5;
@@ -148,12 +132,7 @@ in
             "LOGIN_RATE_PER_MIN=${toString cfg.loginRatePerMinute}"
             "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
             "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
-            "OTEL_SERVICE_NAME=${cfg.telemetryServiceName}"
-            # No collector endpoint -> keep spans out of journald; logs carry
-            # trace_ids for correlation instead.
-            "OTEL_TRACES_EXPORTER=${if cfg.telemetryOtlpEndpoint != null then "otlp" else "none"}"
           ]
-          ++ lib.optional (cfg.telemetryOtlpEndpoint != null) "OTEL_EXPORTER_OTLP_ENDPOINT=${cfg.telemetryOtlpEndpoint}"
           ++ lib.optional (cfg.clientId != null) "VIVAGYM_CLIENT_ID=${cfg.clientId}"
           ++ lib.optional (cfg.clientSecret != null) "VIVAGYM_CLIENT_SECRET=${cfg.clientSecret}";
         NoNewPrivileges = true;

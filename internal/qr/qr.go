@@ -1,4 +1,4 @@
-// Package qr renders QR codes as PNG or SVG images.
+// Package qr renders QR codes as SVG images.
 package qr
 
 import (
@@ -24,15 +24,6 @@ func scaleFor(modules int) int {
 
 func encode(payload string) (*go_qr.QrCode, error) {
 	return go_qr.EncodeText(payload, go_qr.Medium)
-}
-
-// PNG renders payload as a PNG with a 2-module quiet zone.
-func PNG(payload string) ([]byte, error) {
-	q, err := encode(payload)
-	if err != nil {
-		return nil, err
-	}
-	return q.ToPNGBytes(go_qr.NewQrCodeImgConfig(scaleFor(q.Size()), border))
 }
 
 // SVG renders payload as a compact single-path SVG with a 2-module quiet zone.

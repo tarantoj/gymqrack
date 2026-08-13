@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -11,9 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"go.opentelemetry.io/otel"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"vivagym/internal/vivagym"
 )
@@ -319,40 +315,6 @@ func TestLogoutClearsCookie(t *testing.T) {
 	}
 }
 
-func TestQRPNG(t *testing.T) {
-	s := newTestServer(t)
-	h := s.Handler()
-	rec, _ := doJSON(t, h, http.MethodGet, "/qr.png", "", []*http.Cookie{seededCookie("u@e.com")})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("qr.png status = %d, body=%s", rec.Code, rec.Body)
-	}
-	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
-		t.Fatalf("content-type = %q", ct)
-	}
-	if len(rec.Body.Bytes()) < 100 {
-		t.Fatalf("png too small: %d bytes", len(rec.Body.Bytes()))
-	}
-	// Verify it's a valid PNG signature.
-	if !bytes.Equal(rec.Body.Bytes()[:8], []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}) {
-		t.Fatal("not a PNG")
-	}
-}
-
-func TestQRSVG(t *testing.T) {
-	s := newTestServer(t)
-	h := s.Handler()
-	rec, _ := doJSON(t, h, http.MethodGet, "/qr.svg", "", []*http.Cookie{seededCookie("u@e.com")})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("qr.svg status = %d, body=%s", rec.Code, rec.Body)
-	}
-	if ct := rec.Header().Get("Content-Type"); ct != "image/svg+xml" {
-		t.Fatalf("content-type = %q", ct)
-	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte("<svg")) {
-		t.Fatal("response is not SVG markup")
-	}
-}
-
 func TestHealth(t *testing.T) {
 	s := newTestServer(t)
 	rec, _ := doJSON(t, s.Handler(), http.MethodGet, "/health", "", nil)
@@ -360,47 +322,6 @@ func TestHealth(t *testing.T) {
 		t.Fatalf("health status = %d", rec.Code)
 	}
 }
-
-func TestRequestProducesSpan(t *testing.T) {
-	s := newTestServer(t)
-
-	var spans []sdktrace.ReadOnlySpan
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		sdktrace.WithSyncer(&recordingExporter{spans: &spans}),
-	)
-	defer func() { _ = tp.Shutdown(context.Background()) }()
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tp)
-	defer otel.SetTracerProvider(prev)
-
-	rec, _ := doJSON(t, s.Handler(), http.MethodGet, "/health", "", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("health status = %d", rec.Code)
-	}
-	for _, sp := range spans {
-		if sp.Name() == "GET /health" {
-			return
-		}
-	}
-	names := make([]string, 0, len(spans))
-	for _, sp := range spans {
-		names = append(names, sp.Name())
-	}
-	t.Fatalf("no GET /health span recorded; got %v", names)
-}
-
-// recordingExporter collects exported spans for assertions.
-type recordingExporter struct {
-	spans *[]sdktrace.ReadOnlySpan
-}
-
-func (e *recordingExporter) ExportSpans(_ context.Context, spans []sdktrace.ReadOnlySpan) error {
-	*e.spans = append(*e.spans, spans...)
-	return nil
-}
-
-func (e *recordingExporter) Shutdown(context.Context) error { return nil }
 
 func cookieValue(cookies []*http.Cookie, name string) string {
 	for _, c := range cookies {

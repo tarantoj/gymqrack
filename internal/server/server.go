@@ -13,9 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel/trace"
-
 	"vivagym/internal/qr"
 	"vivagym/internal/vivagym"
 )
@@ -34,11 +31,8 @@ type Config struct {
 
 // Server is the HTTP handler set for the live-QR proxy.
 type Server struct {
-	cfg          Config
-	client       *vivagym.Client
-	cookieMaxAge int
-	cookieSecure bool
-	limiter      *rateLimiter
+	cfg     Config
+	limiter *rateLimiter
 }
 
 func New(cfg Config) *Server {
@@ -52,16 +46,13 @@ func New(cfg Config) *Server {
 		cfg.LoginRatePerMin = 10
 	}
 	return &Server{
-		cfg:          cfg,
-		client:       cfg.VivaGymClient,
-		cookieMaxAge: cfg.CookieMaxAge,
-		cookieSecure: strings.HasPrefix(cfg.PublicURL, "https://"),
-		limiter:      newRateLimiter(cfg.LoginRatePerMin),
+		cfg:     cfg,
+		limiter: newRateLimiter(cfg.LoginRatePerMin),
 	}
 }
 
-// Handler returns the fully-routed HTTP handler, wrapped in OpenTelemetry
-// tracing (one root span per request) and structured request logging.
+// Handler returns the fully-routed HTTP handler, wrapped in structured
+// request logging.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleIndex)
@@ -69,36 +60,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/login", s.handleLogin)
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /qr/fragment", s.handleQRFragment)
-	mux.HandleFunc("GET /qr.png", s.handleQRPNG)
-	mux.HandleFunc("GET /qr.svg", s.handleQRSVG)
 	if s.cfg.PublicDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(s.cfg.PublicDir)))
 	}
-	return otelhttp.NewHandler(s.logRequests(mux), "vivagym-wallet",
-		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
-			return r.Method + " " + r.URL.Path
-		}))
+	return s.logRequests(mux)
 }
 
-// logRequests logs one structured line per request, tagged with the request's
-// trace/span IDs so spans and logs can be correlated.
+// logRequests logs one structured line per request.
 func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w}
 		next.ServeHTTP(rec, r)
-		attrs := []slog.Attr{
+		slog.LogAttrs(r.Context(), slog.LevelInfo, "http request",
 			slog.String("method", r.Method),
 			slog.String("path", r.URL.Path),
 			slog.Int("status", rec.status()),
 			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
-		}
-		if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
-			attrs = append(attrs,
-				slog.String("trace_id", sc.TraceID().String()),
-				slog.String("span_id", sc.SpanID().String()))
-		}
-		slog.LogAttrs(r.Context(), slog.LevelInfo, "http request", attrs...)
+		)
 	})
 }
 
@@ -128,22 +107,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // handleIndex renders the full page, showing the sign-in form when the visitor
 // has no valid session and the live QR view otherwise.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	payload, status, err := s.qrResult(w, r)
-	email, _ := readTokens(r)
-	if err != nil {
-		if status == http.StatusUnauthorized {
-			renderPage(w, pageData{View: "login", loginData: loginData{}})
-			return
-		}
-		renderPage(w, pageData{View: "qr", qrData: qrData{Email: email.Email, Updated: "Could not refresh QR"}})
+	v := s.sessionView(w, r)
+	if v.login != nil {
+		renderPage(w, pageData{View: "login", loginData: *v.login})
 		return
 	}
-	d, err := qrView(email.Email, payload)
-	if err != nil {
-		renderPage(w, pageData{View: "qr", qrData: qrData{Email: email.Email, Updated: "Could not refresh QR"}})
-		return
-	}
-	renderPage(w, pageData{View: "qr", qrData: d})
+	renderPage(w, pageData{View: "qr", qrData: *v.qr})
 }
 
 func (s *Server) clientIP(r *http.Request) string {
@@ -197,7 +166,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pair, err := s.client.Login(r.Context(), email, password)
+	pair, err := s.cfg.VivaGymClient.Login(r.Context(), email, password)
 	if err != nil {
 		slog.WarnContext(r.Context(), "login failed", "email", email, "error", err)
 		renderLogin(w, loginData{Error: "Invalid credentials"})
@@ -211,7 +180,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		IssuedAt:     time.Now().UnixMilli(),
 		Email:        email,
 	})
-	s.renderQRView(w, r, email, pair.AccessToken)
+	payload, err := s.cfg.VivaGymClient.FetchQr(r.Context(), pair.AccessToken)
+	renderQR(w, qrDataFor(email, payload, err))
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -234,20 +204,36 @@ func qrView(email, payload string) (qrData, error) {
 	}, nil
 }
 
-// renderQRView renders the QR fragment, fetching the payload with the given
-// fresh access token and falling back to a transient status on failure.
-func (s *Server) renderQRView(w http.ResponseWriter, r *http.Request, email, accessToken string) {
-	payload, err := s.client.FetchQr(r.Context(), accessToken)
-	if err != nil {
-		renderQR(w, qrData{Email: email, Updated: "Could not refresh QR"})
-		return
+// qrDataFor builds the QR view state for a payload, falling back to a
+// transient error state when payload is unavailable or cannot be rendered.
+func qrDataFor(email, payload string, err error) qrData {
+	if err == nil {
+		if d, verr := qrView(email, payload); verr == nil {
+			return d
+		}
 	}
-	d, err := qrView(email, payload)
+	return qrData{Email: email, Updated: "Could not refresh QR"}
+}
+
+// sessionView is the rendered response for a session-dependent request: either
+// the login form or the live QR view. Exactly one field is non-nil.
+type sessionView struct {
+	login *loginData
+	qr    *qrData
+}
+
+// sessionView resolves the current session to a view, fetching (and refreshing)
+// the QR payload as needed.
+func (s *Server) sessionView(w http.ResponseWriter, r *http.Request) sessionView {
+	payload, status, err := s.qrResult(w, r)
 	if err != nil {
-		renderQR(w, qrData{Email: email, Updated: "Could not refresh QR"})
-		return
+		if status == http.StatusUnauthorized {
+			return sessionView{login: &loginData{}}
+		}
 	}
-	renderQR(w, d)
+	email, _ := readTokens(r)
+	d := qrDataFor(email.Email, payload, err)
+	return sessionView{qr: &d}
 }
 
 func (s *Server) isAccessTokenValid(t Tokens) bool {
@@ -271,89 +257,69 @@ func (s *Server) validTokens(w http.ResponseWriter, r *http.Request) (Tokens, bo
 	if t.RefreshToken == "" {
 		return Tokens{}, false
 	}
-	fresh, err := s.client.RefreshTokens(r.Context(), t.RefreshToken)
+	fresh, err := s.cfg.VivaGymClient.RefreshTokens(r.Context(), t.RefreshToken)
 	if err != nil {
 		s.clearTokens(w)
 		return Tokens{}, false
 	}
+	s.rotateTokens(w, &t, fresh)
+	return t, true
+}
+
+// rotateTokens installs fresh tokens into the session cookie.
+func (s *Server) rotateTokens(w http.ResponseWriter, t *Tokens, fresh vivagym.TokenPair) {
 	t.AccessToken = fresh.AccessToken
 	t.RefreshToken = fresh.RefreshToken
 	t.ExpiresIn = fresh.ExpiresIn
 	t.IssuedAt = time.Now().UnixMilli()
-	s.writeTokens(w, t)
-	return t, true
+	s.writeTokens(w, *t)
 }
 
-// qrResult fetches the QR payload, transparently refreshing once if VivaGym
-// rejects the token.
+// unauthorized reports whether err is an upstream 401 response.
+func unauthorized(err error) bool {
+	var vg *vivagym.VivaGymError
+	return errors.As(err, &vg) && vg.Status == http.StatusUnauthorized
+}
+
+// qrResult fetches the QR payload, refreshing the token once if VivaGym
+// rejects it, and clearing the session if the refresh does not help.
 func (s *Server) qrResult(w http.ResponseWriter, r *http.Request) (string, int, error) {
 	t, ok := s.validTokens(w, r)
 	if !ok {
 		return "", http.StatusUnauthorized, errors.New("Not authenticated")
 	}
 
-	for attempt := 0; ; attempt++ {
-		payload, err := s.client.FetchQr(r.Context(), t.AccessToken)
-		if err == nil {
-			return payload, http.StatusOK, nil
-		}
-		var vg *vivagym.VivaGymError
-		if errors.As(err, &vg) && vg.Status == http.StatusUnauthorized && attempt == 0 && t.RefreshToken != "" {
-			fresh, rerr := s.client.RefreshTokens(r.Context(), t.RefreshToken)
-			if rerr == nil {
-				t.AccessToken = fresh.AccessToken
-				t.RefreshToken = fresh.RefreshToken
-				t.ExpiresIn = fresh.ExpiresIn
-				t.IssuedAt = time.Now().UnixMilli()
-				s.writeTokens(w, t)
-				continue
+	payload, err := s.cfg.VivaGymClient.FetchQr(r.Context(), t.AccessToken)
+	if err == nil {
+		return payload, http.StatusOK, nil
+	}
+	if t.RefreshToken != "" && unauthorized(err) {
+		if fresh, rerr := s.cfg.VivaGymClient.RefreshTokens(r.Context(), t.RefreshToken); rerr == nil {
+			s.rotateTokens(w, &t, fresh)
+			payload, err = s.cfg.VivaGymClient.FetchQr(r.Context(), t.AccessToken)
+			if err == nil {
+				return payload, http.StatusOK, nil
 			}
 		}
-		if errors.As(err, &vg) && vg.Status == http.StatusUnauthorized {
-			s.clearTokens(w)
-			return "", http.StatusUnauthorized, errors.New("Session expired, log in again")
-		}
-		return "", http.StatusBadGateway, err
 	}
+	if unauthorized(err) {
+		s.clearTokens(w)
+		return "", http.StatusUnauthorized, errors.New("Session expired, log in again")
+	}
+	return "", http.StatusBadGateway, err
 }
 
 // handleQRFragment serves the auto-refreshing QR view fragment for htmx. When
 // the session has expired it renders the login form instead (with a 200) so the
 // poller replaces itself and stops.
 func (s *Server) handleQRFragment(w http.ResponseWriter, r *http.Request) {
-	payload, status, err := s.qrResult(w, r)
-	if err != nil {
-		if status == http.StatusUnauthorized {
-			renderLogin(w, loginData{Error: "Session expired, sign in again"})
-			return
-		}
-		email, _ := readTokens(r)
-		renderQR(w, qrData{Email: email.Email, Updated: "Could not refresh QR"})
+	v := s.sessionView(w, r)
+	if v.login != nil {
+		v.login.Error = "Session expired, sign in again"
+		renderLogin(w, *v.login)
 		return
 	}
-	email, _ := readTokens(r)
-	d, err := qrView(email.Email, payload)
-	if err != nil {
-		renderQR(w, qrData{Email: email.Email, Updated: "Could not refresh QR"})
-		return
-	}
-	renderQR(w, d)
-}
-
-func (s *Server) handleQRPNG(w http.ResponseWriter, r *http.Request) {
-	payload, status, err := s.qrResult(w, r)
-	if err != nil {
-		http.Error(w, err.Error(), status)
-		return
-	}
-	png, err := qr.PNG(payload)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	w.Header().Set("Content-Type", "image/png")
-	w.WriteHeader(http.StatusOK)
-	w.Write(png)
+	renderQR(w, *v.qr)
 }
 
 func (s *Server) handleQRSVG(w http.ResponseWriter, r *http.Request) {

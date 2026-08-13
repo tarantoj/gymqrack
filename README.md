@@ -1,4 +1,4 @@
-# VivaGym Wallet
+# VivaGym Access
 
 Reverse-engineered API client and live gym-entry QR server for the VivaGym
 Group app (`com.myvitale.vivagym.group`).
@@ -11,8 +11,6 @@ Group app (`com.myvitale.vivagym.group`).
   never stores credentials; each user's token pair lives in an HttpOnly cookie
   owned by their browser.
 - `nixos/` — NixOS module to run the server as a hardened systemd service.
-- `cmd/make-pass` — generates an (unsigned) Apple Wallet `.pkpass` launcher for
-  the QR page.
 - `docs/vivagym-api.md` — notes on the API endpoints and auth flow (reverse
   engineered from the APK in `apk/`).
 
@@ -32,7 +30,6 @@ Tokens are never stored in `localStorage`; do not move them there.
 
 ```sh
 devenv up          # run the dev server (go run) on port 4567
-devenv up --process make-pass  # build the wallet pass (needs Apple signing certs)
 ```
 
 Env: copy `.env.example` to `.env`. Members sign in through the web UI — no
@@ -41,7 +38,7 @@ credentials are stored in `.env`.
 ## Nix
 
 ```sh
-nix build .#vivagym-wallet       # build the server package
+nix build .#vivagym-access       # build the server package
 nix run .#                       # run it (env vars from the environment)
 ```
 
@@ -49,9 +46,9 @@ NixOS module:
 
 ```nix
 {
-  inputs.vivagym-wallet.url = "github:you/vivagym";
+  inputs.vivagym-access.url = "github:you/vivagym";
   ...
-  services.vivagym-wallet = {
+  services.vivagym-access = {
     enable = true;
     publicUrl = "https://qr.example.com";
     trustProxy = true;   # set behind a reverse proxy (rate limiting by real IP)
@@ -63,7 +60,7 @@ NixOS module:
 
 ```
 ├── apk/            # original .xapk (untracked binary)
-├── cmd/            # vivagym-wallet (server) + make-pass (.pkpass generator)
+├── cmd/            # vivagym-access (server)
 ├── docs/           # API reverse-engineering notes
 ├── internal/       # server (handlers, cookie, rate limiting) + VivaGym API client + QR
 ├── nixos/          # NixOS service module

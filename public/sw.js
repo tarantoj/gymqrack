@@ -1,7 +1,7 @@
 // Minimal service worker: precaches the static shell assets so the page
-// installs and loads fast. Everything dynamic (/, /qr/fragment, /auth/*,
-// /qr.svg, /qr.png) is deliberately left network-only — a stale QR or a
-// server-rendered view cached per auth state would be wrong.
+// installs and loads fast. Everything dynamic (/, /qr/fragment, /auth/*) is
+// deliberately left network-only — a stale QR or a server-rendered view cached
+// per auth state would be wrong.
 const CACHE = "v1";
 const ASSETS = [
   "/htmx.min.js",

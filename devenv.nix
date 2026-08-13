@@ -1,10 +1,10 @@
 { pkgs, lib, config, inputs, ... }:
 
 let
-  vivagymWallet = pkgs.callPackage ./package.nix { };
+  vivagymAccess = pkgs.callPackage ./package.nix { };
 in
 {
-  name = "vivagym-wallet";
+  name = "vivagym-access";
 
   # Loads .env into the shell / processes (VIVAGYM_CLIENT_ID, ...)
   dotenv.enable = true;
@@ -13,19 +13,15 @@ in
   languages.go.lsp.enable = true;
 
   packages = with pkgs; [
-    openssl # PKCS#7 pass signature (cmd/make-pass)
-    zip     # .pkpass packaging
-    vivagymWallet # nix-built server (bin: vivagym-wallet)
+    vivagymAccess # nix-built server (bin: vivagym-access)
   ];
 
-  processes.dev.exec = "go run ./cmd/vivagym-wallet";
-  processes.server.exec = "${vivagymWallet}/bin/vivagym-wallet";
-  processes.make-pass.exec = "${vivagymWallet}/bin/make-pass";
+  processes.dev.exec = "go run ./cmd/vivagym-access";
+  processes.server.exec = "${vivagymAccess}/bin/vivagym-access";
 
   enterShell = ''
-    echo "VivaGym Wallet dev shell"
-    echo "  dev server : devenv up            (go run ./cmd/vivagym-wallet)"
-    echo "  nix build  : devenv up --process server   (vivagym-wallet)"
-    echo "  wallet pass: devenv up --process make-pass  (requires Apple signing certs, see cmd/make-pass)"
+    echo "VivaGym Access dev shell"
+    echo "  dev server : devenv up            (go run ./cmd/vivagym-access)"
+    echo "  nix build  : devenv up --process server   (vivagym-access)"
   '';
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 // Tokens is the client-owned VivaGym token pair, stored in an HttpOnly cookie.
@@ -44,14 +45,20 @@ func readTokens(r *http.Request) (Tokens, bool) {
 	return decodeTokens(cookie.Value)
 }
 
+// secureCookies reports whether session cookies should carry the Secure flag,
+// derived from the public URL scheme.
+func (s *Server) secureCookies() bool {
+	return strings.HasPrefix(s.cfg.PublicURL, "https://")
+}
+
 func (s *Server) writeTokens(w http.ResponseWriter, t Tokens) {
 	cookie := &http.Cookie{
 		Name:     cookieName,
 		Value:    encodeTokens(t),
 		Path:     "/",
-		MaxAge:   s.cookieMaxAge,
+		MaxAge:   s.cfg.CookieMaxAge,
 		HttpOnly: true,
-		Secure:   s.cookieSecure,
+		Secure:   s.secureCookies(),
 		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(w, cookie)
@@ -64,7 +71,7 @@ func (s *Server) clearTokens(w http.ResponseWriter) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   s.cookieSecure,
+		Secure:   s.secureCookies(),
 		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(w, cookie)

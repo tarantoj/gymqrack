@@ -13,8 +13,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const BaseURL = "https://vivagym.myvitale.com"
@@ -185,36 +183,16 @@ func (c *Client) RefreshTokens(ctx context.Context, refreshToken string) (TokenP
 // FetchQr returns the gym-entry QR payload for the given access token. The API
 // returns a JSON-encoded string, e.g. "exerp:checkin:...".
 func (c *Client) FetchQr(ctx context.Context, accessToken string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/api/v2.0/exerp/qr", nil)
+	data, err := c.request(ctx, http.MethodGet, "/api/v2.0/exerp/qr",
+		http.Header{"Authorization": {"Bearer " + accessToken}}, nil)
 	if err != nil {
 		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	res, err := c.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return "", err
-	}
-	if res.StatusCode < 200 || res.StatusCode > 299 {
-		msg := fmt.Sprintf("QR request failed: %d %s", res.StatusCode, truncate(string(body), 200))
-		return "", &VivaGymError{Message: msg, Status: res.StatusCode}
 	}
 	var payload string
-	if json.Unmarshal(body, &payload) == nil {
+	if json.Unmarshal(data, &payload) == nil {
 		return payload, nil
 	}
-	return string(body), nil
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
+	return string(data), nil
 }
 
 // New returns a client with sensible defaults. baseURL may be empty.
@@ -231,11 +209,7 @@ func New(baseURL, clientID, clientSecret, locale string) *Client {
 		ClientSecret: clientSecret,
 		Locale:       locale,
 		HTTP: &http.Client{
-			// otelhttp.NewTransport emits client spans for the upstream
-			// calls. It only records method/path/status/duration, never
-			// headers or bodies, so tokens, passwords and QR payloads stay
-			// out of traces.
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
+			Transport: http.DefaultTransport,
 			Timeout:   30 * time.Second,
 		},
 	}
