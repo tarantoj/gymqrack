@@ -1,5 +1,5 @@
 {
-  description = "VivaGym Access — live gym-entry QR server (Go)";
+  description = "Gymqrack — live gym-entry QR server (Go)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -21,18 +21,18 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          vivagymAccess = pkgs.callPackage ./package.nix { };
+          gymqrack = pkgs.callPackage ./package.nix { };
         in
         {
-          "vivagym-access" = vivagymAccess;
-          default = vivagymAccess;
+          inherit gymqrack;
+          default = gymqrack;
         }
       );
 
       apps = forAllSystems (system: {
         default = {
           type = "app";
-          program = "${self.packages.${system}.vivagym-access}/bin/vivagym-access";
+          program = "${self.packages.${system}.gymqrack}/bin/gymqrack";
         };
       });
 

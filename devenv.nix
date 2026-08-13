@@ -4,12 +4,12 @@
 }:
 
 let
-  vivagymAccess = pkgs.callPackage ./package.nix { };
+  gymqrack = pkgs.callPackage ./package.nix { };
 in
 {
-  name = "vivagym-access";
+  name = "gymqrack";
 
-  # Loads .env into the shell / processes (VIVAGYM_CLIENT_ID, ...)
+  # Loads .env into the shell / processes (GYMQRACK_CLIENT_ID, ...)
   dotenv.enable = true;
 
   languages.go.enable = true;
@@ -17,11 +17,11 @@ in
 
   packages = with pkgs; [
     git # needed by the git-hooks (pre-commit) runner
-    vivagymAccess # nix-built server (bin: vivagym-access)
+    gymqrack # nix-built server (bin: gymqrack)
   ];
 
-  processes.dev.exec = "go run ./cmd/vivagym-access";
-  processes.server.exec = "${vivagymAccess}/bin/vivagym-access";
+  processes.dev.exec = "go run ./cmd/gymqrack";
+  processes.server.exec = "${gymqrack}/bin/gymqrack";
 
   git-hooks.hooks = {
     # Format Go source with gofmt.
@@ -52,8 +52,8 @@ in
   };
 
   enterShell = ''
-    echo "VivaGym Access dev shell"
-    echo "  dev server : devenv up            (go run ./cmd/vivagym-access)"
-    echo "  nix build  : devenv up --process server   (vivagym-access)"
+    echo "Gymqrack dev shell"
+    echo "  dev server : devenv up            (go run ./cmd/gymqrack)"
+    echo "  nix build  : devenv up --process server   (gymqrack)"
   '';
 }

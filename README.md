@@ -1,4 +1,4 @@
-# VivaGym Access
+# Gymqrack
 
 Reverse-engineered API client and live gym-entry QR server for the VivaGym
 Group app (`com.myvitale.vivagym.group`).
@@ -11,7 +11,7 @@ Group app (`com.myvitale.vivagym.group`).
   never stores credentials; each user's token pair lives in an HttpOnly cookie
   owned by their browser.
 - `nixos/` — NixOS module to run the server as a hardened systemd service.
-- `docs/vivagym-api.md` — notes on the API endpoints and auth flow (reverse
+- `docs/api.md` — notes on the API endpoints and auth flow (reverse
   engineered from the APK in `apk/`).
 
 ## How auth works
@@ -38,17 +38,17 @@ credentials are stored in `.env`.
 ## Nix
 
 ```sh
-nix build .#vivagym-access       # build the server package
-nix run .#                       # run it (env vars from the environment)
+nix build .#gymqrack       # build the server package
+nix run .#                 # run it (env vars from the environment)
 ```
 
 NixOS module:
 
 ```nix
 {
-  inputs.vivagym-access.url = "github:you/vivagym";
+  inputs.gymqrack.url = "github:you/gymqrack";
   ...
-  services.vivagym-access = {
+  services.gymqrack = {
     enable = true;
     publicUrl = "https://qr.example.com";
     trustProxy = true;   # set behind a reverse proxy (rate limiting by real IP)
@@ -60,7 +60,7 @@ NixOS module:
 
 ```
 ├── apk/            # original .xapk (untracked binary)
-├── cmd/            # vivagym-access (server)
+├── cmd/            # gymqrack (server)
 ├── docs/           # API reverse-engineering notes
 ├── internal/       # server (handlers, cookie, rate limiting) + VivaGym API client + QR
 ├── nixos/          # NixOS service module

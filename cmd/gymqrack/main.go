@@ -1,9 +1,9 @@
-// Command vivagym-access is the VivaGym live gym-entry QR proxy server.
+// Command gymqrack is the VivaGym live gym-entry QR proxy server.
 //
 // Runtime configuration comes from environment variables:
 //
-//	VIVAGYM_CLIENT_ID, VIVAGYM_CLIENT_SECRET (required)
-//	VIVAGYM_LOCALE, PORT, HOST, PUBLIC_URL (optional)
+//	GYMQRACK_CLIENT_ID, GYMQRACK_CLIENT_SECRET (required)
+//	GYMQRACK_LOCALE, PORT, HOST, PUBLIC_URL (optional)
 //	COOKIE_MAX_AGE_DAYS, LOGIN_RATE_PER_MIN, TRUST_PROXY (optional)
 //
 // Logging: structured JSON logs go to stderr.
@@ -22,8 +22,8 @@ import (
 	"syscall"
 	"time"
 
-	"vivagym/internal/server"
-	"vivagym/internal/vivagym"
+	"gymqrack/internal/server"
+	"gymqrack/internal/vivagym"
 )
 
 func envInt(name string, def int) int {
@@ -49,15 +49,15 @@ func main() {
 		publicURL = fmt.Sprintf("http://localhost:%d", port)
 	}
 	publicURL = trimTrailingSlash(publicURL)
-	locale := os.Getenv("VIVAGYM_LOCALE")
+	locale := os.Getenv("GYMQRACK_LOCALE")
 	if locale == "" {
 		locale = "es"
 	}
 
-	clientID := os.Getenv("VIVAGYM_CLIENT_ID")
-	clientSecret := os.Getenv("VIVAGYM_CLIENT_SECRET")
+	clientID := os.Getenv("GYMQRACK_CLIENT_ID")
+	clientSecret := os.Getenv("GYMQRACK_CLIENT_SECRET")
 	if clientID == "" || clientSecret == "" {
-		slog.Error("VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET must be set")
+		slog.Error("GYMQRACK_CLIENT_ID and GYMQRACK_CLIENT_SECRET must be set")
 		os.Exit(1)
 	}
 
@@ -86,7 +86,7 @@ func main() {
 	}
 
 	go func() {
-		slog.Info("VivaGym live QR running", "url", publicURL, "addr", addr)
+		slog.Info("gymqrack live QR running", "url", publicURL, "addr", addr)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("server failed", "error", err)
 			stop()
@@ -108,7 +108,7 @@ func publicDir() string {
 	dirs := []string{
 		filepath.Join("public"),
 		filepath.Join(filepath.Dir(os.Args[0]), "public"),
-		filepath.Join(filepath.Dir(os.Args[0]), "..", "share", "vivagym-access", "public"),
+		filepath.Join(filepath.Dir(os.Args[0]), "..", "share", "gymqrack", "public"),
 	}
 	for _, d := range dirs {
 		if info, err := os.Stat(d); err == nil && info.IsDir() {

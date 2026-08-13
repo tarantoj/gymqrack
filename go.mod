@@ -1,4 +1,4 @@
-module vivagym
+module gymqrack
 
 go 1.26.5
 

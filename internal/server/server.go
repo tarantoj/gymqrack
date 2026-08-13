@@ -18,11 +18,11 @@ import (
 	"strings"
 	"time"
 
-	"vivagym/internal/qr"
-	"vivagym/internal/vivagym"
+	"gymqrack/internal/qr"
+	"gymqrack/internal/vivagym"
 )
 
-const cookieName = "vivagym_tokens"
+const cookieName = "gymqrack_tokens"
 
 // Config holds runtime configuration for the server.
 type Config struct {

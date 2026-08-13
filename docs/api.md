@@ -51,8 +51,8 @@ Object authentication(@Body OauthModel oauthModel, Continuation<...>);
 The body is `OauthModel(grant_type, client_id, client_secret)`:
 
 - `grant_type` = `client_credentials`
-- `client_id` = (from `com.vitale.coredata.BuildConfig`; set as `VIVAGYM_CLIENT_ID` in the server's `.env`)
-- `client_secret` = (from `com.vitale.coredata.BuildConfig`; set as `VIVAGYM_CLIENT_SECRET` in the server's `.env`)
+- `client_id` = (from `com.vitale.coredata.BuildConfig`; set as `GYMQRACK_CLIENT_ID` in the server's `.env`)
+- `client_secret` = (from `com.vitale.coredata.BuildConfig`; set as `GYMQRACK_CLIENT_SECRET` in the server's `.env`)
 
 (from `com.vitale.coredata.BuildConfig` and `Authentication.java:59-60`)
 
@@ -121,8 +121,8 @@ LOCALE=es            # es | en | pt
 TEMP=$(curl -s -X POST "$BASE/oauth/v2/token" \
   -H 'Content-Type: application/json' \
   -d "{\"grant_type\":\"client_credentials\",
-       \"client_id\":\"$VIVAGYM_CLIENT_ID\",
-       \"client_secret\":\"$VIVAGYM_CLIENT_SECRET\"}" \
+       "client_id":"$GYMQRACK_CLIENT_ID",
+       "client_secret":"$GYMQRACK_CLIENT_SECRET"}" \
   | jq -r .access_token)
 
 # 2) log in with the member's email/password -> get bearer token

@@ -23,5 +23,5 @@ jobs:
     - name: Build the devenv shell and run pre-commit hooks
       run: devenv test
 
-    - name: Build the vivagym-access package
-      run: nix build .#vivagym-access
+    - name: Build the gymqrack package
+      run: nix build .#gymqrack

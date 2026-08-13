@@ -1,20 +1,20 @@
-# NixOS module to run the VivaGym Access live-QR server as a systemd service.
+# NixOS module to run the Gymqrack live-QR server as a systemd service.
 #
 # Example usage:
 #
 #   {
-#     inputs.vivagym-access.url = "github:you/vivagym-access";
+#     inputs.gymqrack.url = "github:you/gymqrack";
 #     ...
 #   }
 #
-#   services.vivagym-access = {
+#   services.gymqrack = {
 #     enable = true;
 #     publicUrl = "https://qr.example.com";
 #     trustProxy = true;
 #     clientId = "your-client-id";
 #     clientSecret = "your-client-secret";
-#     # or load VIVAGYM_CLIENT_ID / VIVAGYM_CLIENT_SECRET from a root-owned file:
-#     # environmentFile = "/run/secrets/vivagym-access.env";
+#     # or load GYMQRACK_CLIENT_ID / GYMQRACK_CLIENT_SECRET from a root-owned file:
+#     # environmentFile = "/run/secrets/gymqrack.env";
 #   };
 #
 # Users authenticate through the web UI (email + password); the server is a
@@ -29,17 +29,17 @@
 }:
 
 let
-  cfg = config.services.vivagym-access;
+  cfg = config.services.gymqrack;
 in
 {
-  options.services.vivagym-access = {
-    enable = lib.mkEnableOption "the VivaGym Access live-QR server";
+  options.services.gymqrack = {
+    enable = lib.mkEnableOption "the Gymqrack live-QR server";
 
     package = lib.mkOption {
       type = lib.types.package;
       default = pkgs.callPackage ../package.nix { };
       defaultText = lib.literalExpression "pkgs.callPackage ../package.nix { }";
-      description = "Package providing the vivagym-access server.";
+      description = "Package providing the gymqrack server.";
     };
 
     host = lib.mkOption {
@@ -87,19 +87,19 @@ in
     clientId = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
-      description = "VivaGym OAuth client id (VIVAGYM_CLIENT_ID). Required unless provided via environmentFile.";
+      description = "VivaGym OAuth client id (GYMQRACK_CLIENT_ID). Required unless provided via environmentFile.";
     };
 
     clientSecret = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
-      description = "VivaGym OAuth client secret (VIVAGYM_CLIENT_SECRET). Required unless provided via environmentFile.";
+      description = "VivaGym OAuth client secret (GYMQRACK_CLIENT_SECRET). Required unless provided via environmentFile.";
     };
 
     environmentFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;
-      description = "File (e.g. /run/secrets/vivagym-access.env) holding VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET, loaded by systemd. Alternative to setting clientId/clientSecret as options.";
+      description = "File (e.g. /run/secrets/gymqrack.env) holding GYMQRACK_CLIENT_ID and GYMQRACK_CLIENT_SECRET, loaded by systemd. Alternative to setting clientId/clientSecret as options.";
     };
   };
 
@@ -107,29 +107,29 @@ in
     assertions = [
       {
         assertion = (cfg.clientId != null) == (cfg.clientSecret != null);
-        message = "services.vivagym-access: set both clientId and clientSecret, or neither (use environmentFile instead).";
+        message = "services.gymqrack: set both clientId and clientSecret, or neither (use environmentFile instead).";
       }
       {
         assertion = cfg.clientId != null || cfg.environmentFile != null;
-        message = "services.vivagym-access: clientId and clientSecret must be set, or environmentFile must point to a file containing VIVAGYM_CLIENT_ID and VIVAGYM_CLIENT_SECRET.";
+        message = "services.gymqrack: clientId and clientSecret must be set, or environmentFile must point to a file containing GYMQRACK_CLIENT_ID and GYMQRACK_CLIENT_SECRET.";
       }
     ];
 
-    systemd.services.vivagym-access = {
-      description = "VivaGym Access live-QR server";
+    systemd.services.gymqrack = {
+      description = "Gymqrack live-QR server";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${cfg.package}/bin/vivagym-access";
+        ExecStart = "${cfg.package}/bin/gymqrack";
         DynamicUser = true;
         Restart = "on-failure";
         RestartSec = 5;
         EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
         Environment = [
-          "VIVAGYM_LOCALE=${cfg.locale}"
+          "GYMQRACK_LOCALE=${cfg.locale}"
           "PORT=${toString cfg.port}"
           "HOST=${cfg.host}"
           "PUBLIC_URL=${cfg.publicUrl}"
@@ -137,8 +137,8 @@ in
           "COOKIE_MAX_AGE_DAYS=${toString cfg.cookieMaxAgeDays}"
           "TRUST_PROXY=${if cfg.trustProxy then "1" else "0"}"
         ]
-        ++ lib.optional (cfg.clientId != null) "VIVAGYM_CLIENT_ID=${cfg.clientId}"
-        ++ lib.optional (cfg.clientSecret != null) "VIVAGYM_CLIENT_SECRET=${cfg.clientSecret}";
+        ++ lib.optional (cfg.clientId != null) "GYMQRACK_CLIENT_ID=${cfg.clientId}"
+        ++ lib.optional (cfg.clientSecret != null) "GYMQRACK_CLIENT_SECRET=${cfg.clientSecret}";
         NoNewPrivileges = true;
         PrivateTmp = true;
         ProtectHome = true;

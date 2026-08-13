@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"vivagym/internal/vivagym"
+	"gymqrack/internal/vivagym"
 )
 
 // mockUpstream implements the VivaGym API surface the proxy needs.
