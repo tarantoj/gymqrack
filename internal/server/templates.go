@@ -27,9 +27,11 @@ type qrData struct {
 }
 
 // pageData is the top-level state for the full page; one of the two embedded
-// views is rendered depending on View.
+// views is rendered depending on View. Watch adds the Apple Watch styling
+// class to the root <html> element.
 type pageData struct {
-	View string
+	View  string
+	Watch bool
 	loginData
 	qrData
 }

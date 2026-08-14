@@ -23,6 +23,7 @@ import (
 )
 
 const cookieName = "gymqrack_tokens"
+const watchCookie = "gymqrack_watch"
 
 // Config holds runtime configuration for the server.
 type Config struct {
@@ -163,14 +164,46 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleIndex renders the full page, showing the sign-in form when the visitor
-// has no valid session and the live QR view otherwise.
+// has no valid session and the live QR view otherwise. A ?watch=1 / ?watch=true
+// query parameter forces Apple Watch mode (and persists it in a cookie);
+// ?watch=0 / ?watch=false clears it.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	v := s.sessionView(w, r)
-	if v.login != nil {
-		renderPage(w, pageData{View: "login", loginData: *v.login})
+	if _, ok := r.URL.Query()["watch"]; ok {
+		s.setWatch(w, parseWatch(r.URL.Query().Get("watch")))
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	renderPage(w, pageData{View: "qr", qrData: *v.qr})
+	v := s.sessionView(w, r)
+	page := pageData{Watch: isWatch(r)}
+	if v.login != nil {
+		page.View = "login"
+		page.loginData = *v.login
+		renderPage(w, page)
+		return
+	}
+	page.View = "qr"
+	page.qrData = *v.qr
+	renderPage(w, page)
+}
+
+// parseWatch interprets a watch flag value; only explicit "off" values are
+// false, so "1", "true", "yes" etc. all force watch mode.
+func parseWatch(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "0", "false", "no", "off", "":
+		return false
+	default:
+		return true
+	}
+}
+
+// isWatch reports whether the request should render in Apple Watch mode: an
+// explicit gymqrack_watch cookie or a Watch User-Agent.
+func isWatch(r *http.Request) bool {
+	if c, err := r.Cookie(watchCookie); err == nil && parseWatch(c.Value) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(r.UserAgent()), "watch")
 }
 
 func (s *Server) clientIP(r *http.Request) string {
