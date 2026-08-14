@@ -64,26 +64,6 @@ func (s *Server) writeTokens(w http.ResponseWriter, t Tokens) {
 	http.SetCookie(w, cookie)
 }
 
-// setWatch installs (or, when on is false, clears) the gymqrack_watch cookie
-// that forces Apple Watch mode regardless of viewport or User-Agent.
-func (s *Server) setWatch(w http.ResponseWriter, on bool) {
-	cookie := &http.Cookie{
-		Name:     watchCookie,
-		Value:    "1",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   s.secureCookies(),
-		SameSite: http.SameSiteLaxMode,
-	}
-	if on {
-		cookie.MaxAge = 365 * 86_400
-	} else {
-		cookie.Value = ""
-		cookie.MaxAge = -1
-	}
-	http.SetCookie(w, cookie)
-}
-
 func (s *Server) clearTokens(w http.ResponseWriter) {
 	cookie := &http.Cookie{
 		Name:     cookieName,
