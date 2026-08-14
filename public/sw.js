@@ -2,7 +2,7 @@
 // installs and loads fast. Everything dynamic (/, /qr/fragment, /auth/*) is
 // deliberately left network-only — a stale QR or a server-rendered view cached
 // per auth state would be wrong.
-const CACHE = "v3";
+const CACHE = "v5";
 const ASSETS = [
   "/htmx.min.js",
   "/app.js",
