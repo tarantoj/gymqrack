@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"gymqrack/internal/qr"
 	"gymqrack/internal/vivagym"
 )
 
@@ -135,7 +136,7 @@ func TestIndexRendersQRWhenAuthenticated(t *testing.T) {
 		t.Fatalf("index status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1", "<svg", `hx-get="/qr/fragment"`, "tabvisible"} {
+	for _, want := range []string{`id="qrView"`, "user@example.com", "<svg", `hx-get="/qr/fragment"`, "tabvisible", "personal and non-transferable"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q:\n%s", want, body)
 		}
@@ -164,7 +165,7 @@ func TestLoginJSONSuccess(t *testing.T) {
 		t.Fatal("no Set-Cookie on login")
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1", "<svg"} {
+	for _, want := range []string{`id="qrView"`, "user@example.com", "<svg"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("login response missing %q:\n%s", want, body)
 		}
@@ -184,7 +185,7 @@ func TestLoginFormSuccess(t *testing.T) {
 		t.Fatal("no Set-Cookie on login")
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`id="qrView"`, "user@example.com", "exerp:checkin:1", "<svg"} {
+	for _, want := range []string{`id="qrView"`, "user@example.com", "<svg"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("login response missing %q:\n%s", want, body)
 		}
@@ -261,8 +262,15 @@ func TestQRRefreshRotation(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("qr fragment status = %d, body=%s", rec.Code, rec.Body)
 	}
-	if !strings.Contains(rec.Body.String(), "exerp:checkin:2") {
-		t.Fatalf("expected refreshed payload, got:\n%s", rec.Body)
+	// The raw payload is no longer echoed as text; the refreshed payload must
+	// instead be rendered into the inline QR SVG.
+	svg := extractTag(rec.Body.String(), "<svg", "</svg>")
+	wantSVG, err := qr.SVG("exerp:checkin:2")
+	if err != nil {
+		t.Fatalf("qr.SVG: %v", err)
+	}
+	if strings.TrimSpace(svg) != strings.TrimSpace(string(wantSVG)) {
+		t.Fatalf("fragment did not render the refreshed payload:\n%s", rec.Body.String())
 	}
 	if len(cookies) == 0 {
 		t.Fatal("expected rotated cookie")

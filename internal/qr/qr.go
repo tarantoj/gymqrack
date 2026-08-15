@@ -5,9 +5,9 @@ import (
 	go_qr "github.com/piglig/go-qr"
 )
 
-// border is the quiet-zone width in modules, matching the previous TypeScript
-// server's `qrcode.toBuffer(payload, { width: 512, margin: 2 })`.
-const border = 2
+// border is the quiet-zone width in modules, matching the VivaGym app's ZXing
+// `QRCodeWriter.encode(payload, QR_CODE, 512, 512)` default margin of 1.
+const border = 1
 
 // maxSize is the largest rendered side in pixels; larger symbols shrink the
 // module scale so the output never exceeds it.
@@ -23,10 +23,13 @@ func scaleFor(modules int) int {
 }
 
 func encode(payload string) (*go_qr.QrCode, error) {
-	return go_qr.EncodeText(payload, go_qr.Medium)
+	// Low error correction matches ZXing's default (QRCodeWriter uses L when no
+	// hint is supplied), keeping the rendered pattern identical to the app.
+	return go_qr.EncodeText(payload, go_qr.Low)
 }
 
-// SVG renders payload as a compact single-path SVG with a 2-module quiet zone.
+// SVG renders payload as a compact single-path SVG with a 1-module quiet zone,
+// matching the VivaGym app's ZXing rendering.
 func SVG(payload string) ([]byte, error) {
 	q, err := encode(payload)
 	if err != nil {
