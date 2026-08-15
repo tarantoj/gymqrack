@@ -52,6 +52,8 @@ in
     taplo.enable = true;
     # Lint GitHub Actions workflow files.
     actionlint.enable = true;
+    # Lint shell scripts.
+    shellcheck.enable = true;
     # htmx.min.js is a vendored minified library; never reformat or lint it.
     oxfmt.excludes = [ "htmx\\.min\\.js$" ];
     oxlint.excludes = [ "htmx\\.min\\.js$" ];

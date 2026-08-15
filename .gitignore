@@ -1,6 +1,9 @@
 .env
 node_modules/
 dist/
+apk/*.xapk
+apk/*.apk
+apk/jadx-out/
 /.devenv/
 /result
 /.pre-commit-config.yaml

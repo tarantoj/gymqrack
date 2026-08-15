@@ -30,6 +30,22 @@ Call<String> getQR();
 passed to `QrPresenterImpl.generateQR()` (`QrPresenterImpl.java:77`), which
 encodes it with ZXing `QRCodeWriter` at 512x512 and shows it in the UI.
 
+### On-screen size
+
+The bitmap is generated at 512x512 px, but the size users actually see is set
+by the layout, not the bitmap:
+
+- `res/layout/activity_qr.xml`: the QR `ImageView` (`ivQR`,
+  `id=0x7f0a041f`) is `200dp x 200dp` with a `24dp` margin; no `scaleType` is
+  set, so the default **FIT_CENTER** applies (the 512x512 bitmap is scaled
+  down to fit the 200dp box).
+- `QrActivity.java:83-85` (`showQRView`) just calls
+  `ivQR.setImageBitmap(bitmap)` — no further scaling is done in code.
+
+So on-screen size is ~200dp (≈400-600 physical px depending on device
+density). The displayed payload is unaffected; only the render container
+constrains the bitmap.
+
 > Note: the `exerp` path indicates this talks to the **Exerp** gym-management
 > platform (the same system used by VivaGym's access control / turnstiles).
 
