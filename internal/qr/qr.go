@@ -6,8 +6,9 @@ import (
 )
 
 // border is the quiet-zone width in modules, matching the VivaGym app's ZXing
-// `QRCodeWriter.encode(payload, QR_CODE, 512, 512)` default margin of 1.
-const border = 1
+// `QRCodeWriter.encode(payload, QR_CODE, 512, 512)` default margin
+// (`QUIET_ZONE_SIZE = 4`).
+const border = 4
 
 // maxSize is the largest rendered side in pixels; larger symbols shrink the
 // module scale so the output never exceeds it.
@@ -28,7 +29,7 @@ func encode(payload string) (*go_qr.QrCode, error) {
 	return go_qr.EncodeText(payload, go_qr.Low)
 }
 
-// SVG renders payload as a compact single-path SVG with a 1-module quiet zone,
+// SVG renders payload as a compact single-path SVG with a 4-module quiet zone,
 // matching the VivaGym app's ZXing rendering.
 func SVG(payload string) ([]byte, error) {
 	q, err := encode(payload)
