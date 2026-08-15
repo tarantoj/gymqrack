@@ -39,8 +39,10 @@ Tokens are never stored in `localStorage`; do not move them there.
 devenv up          # run the dev server (go run) on port 4567
 ```
 
-Env: copy `.env.example` to `.env`. Members sign in through the web UI — no
-credentials are stored in `.env`.
+Secrets: the client id/secret live in your keyring via SecretSpec
+(`secretspec set GYMQRACK_CLIENT_ID`); non-secret config has defaults in
+`secretspec.toml`. Members sign in through the web UI — no credentials are
+stored in the repo.
 
 ## Nix
 

@@ -1,16 +1,9 @@
-{
-  pkgs,
-  ...
-}:
-
+{ pkgs, ... }:
 let
   gymqrack = pkgs.callPackage ./package.nix { };
 in
 {
   name = "gymqrack";
-
-  # Loads .env into the shell / processes (GYMQRACK_CLIENT_ID, ...)
-  dotenv.enable = true;
 
   languages.go.enable = true;
   languages.go.lsp.enable = true;
@@ -18,10 +11,13 @@ in
   packages = with pkgs; [
     git # needed by the git-hooks (pre-commit) runner
     gymqrack # nix-built server (bin: gymqrack)
+    secretspec
   ];
 
-  processes.dev.exec = "go run ./cmd/gymqrack";
-  processes.server.exec = "${gymqrack}/bin/gymqrack";
+  # Load secrets at runtime so they are only exposed to the processes that
+  # need them, not the whole shell (see devenv.sh/integrations/secretspec/).
+  processes.dev.exec = "secretspec run -- go run ./cmd/gymqrack";
+  processes.server.exec = "secretspec run -- ${gymqrack}/bin/gymqrack";
 
   git-hooks.hooks = {
     # Format Go source with gofmt.
@@ -53,7 +49,8 @@ in
 
   enterShell = ''
     echo "Gymqrack dev shell"
-    echo "  dev server : devenv up            (go run ./cmd/gymqrack)"
-    echo "  nix build  : devenv up --process server   (gymqrack)"
+    echo "  secrets    : secretspec set GYMQRACK_CLIENT_ID (once, keyring)"
+    echo "  dev server : devenv up            (secretspec run -- go run ./cmd/gymqrack)"
+    echo "  nix build  : devenv up --process server   (secretspec run -- gymqrack)"
   '';
 }
