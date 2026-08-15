@@ -42,6 +42,12 @@ Secrets (`GYMQRACK_CLIENT_ID`, `GYMQRACK_CLIENT_SECRET`) are declared in
 `PORT`, `PUBLIC_URL`) has committed defaults in `secretspec.toml`. devenv
 processes load secrets at runtime via `secretspec run --` (see devenv.nix).
 
+The secretspec integration is DISABLED in `devenv.yaml`
+(`secretspec.enable = false`): enabling it makes devenv validate required
+secrets at eval time, which breaks CI (no keyring on runners). Instead
+`devenv.nix` exports `SECRETSPEC_PROFILE=default` and
+`SECRETSPEC_PROVIDER=keyring` in `env`, so the CLI resolves the same way.
+
 Findings from setup:
 
 - Always run secretspec commands inside the devenv shell (`devenv shell bash

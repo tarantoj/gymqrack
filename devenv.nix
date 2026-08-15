@@ -5,6 +5,14 @@ in
 {
   name = "gymqrack";
 
+  # Secretspec integration is disabled in devenv.yaml (eval-time validation
+  # would break CI), so export the profile/provider the CLI would otherwise get
+  # from it, letting `secretspec run`/`check`/`set` resolve against the keyring.
+  env = {
+    SECRETSPEC_PROFILE = "default";
+    SECRETSPEC_PROVIDER = "keyring";
+  };
+
   languages.go.enable = true;
   languages.go.lsp.enable = true;
 

@@ -4,7 +4,8 @@ inputs:
   nixpkgs:
     url: github:NixOS/nixpkgs/nixpkgs-unstable
 
+# Disabled: the integration validates secrets at devenv-eval time, which
+# breaks CI (no keyring on runners). Processes load secrets at runtime via
+# `secretspec run --`; SECRETSPEC_PROFILE/PROVIDER are exported in devenv.nix.
 secretspec:
-  enable: true
-  provider: keyring
-  profile: default
+  enable: false
