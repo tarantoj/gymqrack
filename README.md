@@ -24,6 +24,9 @@ Group app (`com.myvitale.vivagym.group`).
    refreshing the ~10-minute access token transparently when needed, and
    forwards the bearer token to `api/v2.0/exerp/qr`.
 
+The raw payload is also exposed to authenticated sessions as plain text at
+`GET /qr/payload` (same cookie + transparent token refresh as the QR view).
+
 Tokens are never stored in `localStorage`; do not move them there.
 
 ## Development (devenv)

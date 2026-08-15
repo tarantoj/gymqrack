@@ -65,6 +65,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/login", s.handleLogin)
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /qr/fragment", s.handleQRFragment)
+	mux.HandleFunc("GET /qr/payload", s.handleQRPayload)
 	if s.cfg.PublicDir != "" {
 		files := http.FileServer(noListingFS{http.Dir(s.cfg.PublicDir)})
 		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -378,4 +379,16 @@ func (s *Server) handleQRFragment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderQR(w, *v.qr)
+}
+
+// handleQRPayload serves the raw QR payload as plain text, using the same
+// session cookie (with transparent token refresh) as the QR view.
+func (s *Server) handleQRPayload(w http.ResponseWriter, r *http.Request) {
+	payload, status, err := s.qrResult(w, r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(payload))
 }

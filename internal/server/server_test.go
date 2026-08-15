@@ -300,6 +300,53 @@ func TestQRFragmentExpiredSessionShowsLogin(t *testing.T) {
 	}
 }
 
+func TestQRPayloadAuthenticated(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+
+	rec, _ := doJSON(t, h, http.MethodGet, "/qr/payload", "", []*http.Cookie{seededCookie("u@e.com")})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("payload status = %d, body=%s", rec.Code, rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "text/plain; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/plain", ct)
+	}
+	if got := rec.Body.String(); got != "exerp:checkin:1" {
+		t.Fatalf("payload = %q, want exerp:checkin:1", got)
+	}
+}
+
+func TestQRPayloadUnauthenticated(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+
+	rec, _ := doJSON(t, h, http.MethodGet, "/qr/payload", "", nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated payload status = %d, want 401", rec.Code)
+	}
+}
+
+func TestQRPayloadRefreshesToken(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+
+	tok := Tokens{
+		AccessToken:  "access-1",
+		RefreshToken: "refresh-1",
+		ExpiresIn:    600,
+		IssuedAt:     time.Now().Add(-20 * time.Minute).UnixMilli(),
+		Email:        "u@e.com",
+	}
+	cookie := &http.Cookie{Name: cookieName, Value: encodeTokens(tok), Path: "/"}
+	rec, _ := doJSON(t, h, http.MethodGet, "/qr/payload", "", []*http.Cookie{cookie})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("payload status = %d, body=%s", rec.Code, rec.Body)
+	}
+	if got := rec.Body.String(); got != "exerp:checkin:2" {
+		t.Fatalf("payload = %q, want refreshed exerp:checkin:2", got)
+	}
+}
+
 func TestLogoutClearsCookie(t *testing.T) {
 	s := newTestServer(t)
 	h := s.Handler()
