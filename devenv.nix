@@ -13,8 +13,12 @@ in
     SECRETSPEC_PROVIDER = "keyring";
   };
 
-  languages.go.enable = true;
-  languages.go.lsp.enable = true;
+  languages = {
+    go.enable = true;
+    go.lsp.enable = true;
+    java.enable = true;
+    java.lsp.enable = true;
+  };
 
   packages = with pkgs; [
     git # needed by the git-hooks (pre-commit) runner
