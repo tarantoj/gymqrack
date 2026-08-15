@@ -21,7 +21,7 @@ buildGoModule {
     ];
   };
 
-  vendorHash = "sha256-j3eeyLBQ1fBpnQtf6+pyXSQ9mdUKSj5soQd6JT47PpM=";
+  vendorHash = "sha256-kJePEf7VvsAUnqDX2g5LKeLcLskpPyWKs6kPJr0Lpiw=";
 
   postInstall = ''
     mkdir -p $out/share/gymqrack

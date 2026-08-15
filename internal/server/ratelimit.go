@@ -3,61 +3,70 @@ package server
 import (
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
-// rateLimiter is a simple in-memory fixed-window limiter keyed by IP.
+// rateLimiter is a per-key token-bucket limiter built on golang.org/x/time/rate.
+// Each key gets its own bucket of perMin tokens that refills continuously at
+// perMin tokens per minute, so a burst of perMin requests is allowed, then one
+// token every window/perMin. Idle buckets are pruned so memory stays bounded.
 type rateLimiter struct {
 	mu        sync.Mutex
 	perMin    int
-	entries   map[string]rateEntry
+	window    time.Duration
+	entries   map[string]*rate.Limiter
 	lastSweep time.Time
 }
 
-type rateEntry struct {
-	count   int
-	resetAt time.Time
-}
-
 const (
-	// window is the rate-limiting window.
+	// window is the refill period for a bucket (perMin tokens refill over it).
 	window = time.Minute
-	// sweepInterval bounds how often expired entries are pruned so the map
-	// cannot grow without bound.
+	// sweepInterval bounds how often idle buckets are pruned.
 	sweepInterval = time.Minute
 )
 
 func newRateLimiter(perMin int) *rateLimiter {
+	if perMin <= 0 {
+		perMin = 1
+	}
 	return &rateLimiter{
 		perMin:  perMin,
-		entries: make(map[string]rateEntry),
+		window:  window,
+		entries: make(map[string]*rate.Limiter),
 	}
 }
 
-// allow reports whether key may proceed, incrementing its count. Expired
-// entries are pruned at most once per sweepInterval.
+// allow reports whether key may proceed, consuming one token. Expired (full)
+// buckets are pruned at most once per sweepInterval.
 func (rl *rateLimiter) allow(key string) bool {
-	now := time.Now()
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	if now.Sub(rl.lastSweep) >= sweepInterval {
-		for k, e := range rl.entries {
-			if !e.resetAt.After(now) {
-				delete(rl.entries, k)
-			}
-		}
-		rl.lastSweep = now
+	rl.sweepLocked(time.Now())
+	l, ok := rl.entries[key]
+	if !ok {
+		l = rate.NewLimiter(rate.Every(rl.window/time.Duration(rl.perMin)), rl.perMin)
+		rl.entries[key] = l
 	}
-	entry, ok := rl.entries[key]
-	if !ok || entry.resetAt.Before(now) {
-		rl.entries[key] = rateEntry{count: 1, resetAt: now.Add(window)}
-		return true
-	}
-	entry.count++
-	rl.entries[key] = entry
-	return entry.count <= rl.perMin
+	return l.Allow()
 }
 
-// reset clears the count for key (used after a successful login).
+// sweepLocked prunes buckets that have refilled to full (i.e. been idle) since
+// the last sweep. Callers must hold mu. No-op within sweepInterval of the last
+// sweep.
+func (rl *rateLimiter) sweepLocked(now time.Time) {
+	if now.Sub(rl.lastSweep) < sweepInterval {
+		return
+	}
+	for k, l := range rl.entries {
+		if l.Tokens() >= float64(rl.perMin) {
+			delete(rl.entries, k)
+		}
+	}
+	rl.lastSweep = now
+}
+
+// reset clears the bucket for key (used after a successful login).
 func (rl *rateLimiter) reset(key string) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
