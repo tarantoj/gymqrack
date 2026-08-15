@@ -26,6 +26,10 @@ Group app (`com.myvitale.vivagym.group`).
 
 The raw payload is also exposed to authenticated sessions as plain text at
 `GET /qr/payload` (same cookie + transparent token refresh as the QR view).
+Without a session it responds with a `WWW-Authenticate` challenge and accepts
+VivaGym credentials via HTTP Basic auth, e.g.
+`curl -u email:password https://…/qr/payload` (the resulting session cookie is
+set for subsequent requests).
 
 Tokens are never stored in `localStorage`; do not move them there.
 

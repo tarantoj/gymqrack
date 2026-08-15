@@ -220,7 +220,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	email = strings.ToLower(strings.TrimSpace(email))
-	if email == "" || password == "" || len(email) > 254 || len(password) > 256 || !strings.Contains(email, "@") {
+	if !validCredentials(email, password) {
 		renderLogin(w, loginData{Error: "Invalid email or password"})
 		return
 	}
@@ -241,6 +241,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 	payload, err := s.cfg.VivaGymClient.FetchQr(r.Context(), pair.AccessToken)
 	renderQR(w, qrDataFor(email, payload, err))
+}
+
+// validCredentials reports whether an email/password pair passes basic checks.
+func validCredentials(email, password string) bool {
+	return email != "" && password != "" && len(email) <= 254 && len(password) <= 256 && strings.Contains(email, "@")
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -382,13 +387,56 @@ func (s *Server) handleQRFragment(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleQRPayload serves the raw QR payload as plain text, using the same
-// session cookie (with transparent token refresh) as the QR view.
+// session cookie (with transparent token refresh) as the QR view. When there
+// is no valid session it also accepts VivaGym credentials via HTTP Basic auth
+// (a scriptable alternative to the web form), prompting with a WWW-Authenticate
+// challenge when no credentials are supplied.
 func (s *Server) handleQRPayload(w http.ResponseWriter, r *http.Request) {
 	payload, status, err := s.qrResult(w, r)
+	if err != nil && status == http.StatusUnauthorized {
+		if email, password, ok := r.BasicAuth(); ok {
+			payload, status, err = s.loginWithBasicAuth(w, r, email, password)
+		}
+	}
 	if err != nil {
+		if status == http.StatusUnauthorized {
+			w.Header().Set("WWW-Authenticate", `Basic realm="gymqrack", charset="UTF-8"`)
+		}
 		http.Error(w, err.Error(), status)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(payload))
+}
+
+// loginWithBasicAuth validates HTTP Basic credentials against VivaGym,
+// installs the resulting session cookie, and returns the freshly fetched QR
+// payload.
+func (s *Server) loginWithBasicAuth(w http.ResponseWriter, r *http.Request, email, password string) (string, int, error) {
+	ip := s.clientIP(r)
+	if !s.limiter.allow(ip) {
+		return "", http.StatusTooManyRequests, errors.New("too many attempts, try again later")
+	}
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !validCredentials(email, password) {
+		return "", http.StatusUnauthorized, errors.New("invalid credentials")
+	}
+	pair, err := s.cfg.VivaGymClient.Login(r.Context(), email, password)
+	if err != nil {
+		slog.WarnContext(r.Context(), "basic login failed", "email", email, "error", err)
+		return "", http.StatusUnauthorized, errors.New("invalid credentials")
+	}
+	s.limiter.reset(ip)
+	s.writeTokens(w, Tokens{
+		AccessToken:  pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+		ExpiresIn:    pair.ExpiresIn,
+		IssuedAt:     time.Now().UnixMilli(),
+		Email:        email,
+	})
+	payload, err := s.cfg.VivaGymClient.FetchQr(r.Context(), pair.AccessToken)
+	if err != nil {
+		return "", http.StatusBadGateway, err
+	}
+	return payload, http.StatusOK, nil
 }

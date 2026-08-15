@@ -326,6 +326,62 @@ func TestQRPayloadUnauthenticated(t *testing.T) {
 	}
 }
 
+func TestQRPayloadChallengesWithoutAuth(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+
+	rec, _ := doJSON(t, h, http.MethodGet, "/qr/payload", "", nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	if w := rec.Header().Get("WWW-Authenticate"); !strings.HasPrefix(w, "Basic ") {
+		t.Fatalf("expected WWW-Authenticate challenge, got %q", w)
+	}
+}
+
+func TestQRPayloadBasicAuth(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/qr/payload", nil)
+	req.SetBasicAuth("User@Example.com", "hunter2")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("payload status = %d, body=%s", rec.Code, rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "text/plain; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/plain", ct)
+	}
+	if got := rec.Body.String(); got != "exerp:checkin:1" {
+		t.Fatalf("payload = %q, want exerp:checkin:1", got)
+	}
+	if v := cookieValue(rec.Result().Cookies(), cookieName); v == "" {
+		t.Fatal("expected session cookie to be set after Basic auth")
+	}
+}
+
+func TestQRPayloadBasicAuthInvalid(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/qr/payload", nil)
+	req.SetBasicAuth("a@b.com", "wrong")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("bad credentials status = %d, want 401", rec.Code)
+	}
+	if w := rec.Header().Get("WWW-Authenticate"); !strings.HasPrefix(w, "Basic ") {
+		t.Fatalf("expected WWW-Authenticate challenge, got %q", w)
+	}
+	if v := cookieValue(rec.Result().Cookies(), cookieName); v != "" {
+		t.Fatal("no session cookie should be set on failed Basic auth")
+	}
+}
+
 func TestQRPayloadRefreshesToken(t *testing.T) {
 	s := newTestServer(t)
 	h := s.Handler()
