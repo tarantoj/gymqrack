@@ -46,6 +46,34 @@ So on-screen size is ~200dp (≈400-600 physical px depending on device
 density). The displayed payload is unaffected; only the render container
 constrains the bitmap.
 
+### Payload format
+
+Live payloads have the shape (values below are placeholders):
+
+```
+"exerp:checkin:123p45678-1786821607534-0123456789abcdef0123456789abcdef"
+```
+
+The payload is `exerp:checkin:<memberRef>-<epochMillis>-<digest>`:
+
+- `memberRef` = `<clubNo>p<memberNo>` (e.g. `123p45678` — club 123, member
+  number 45678; the numbers are not secret, but use a placeholder here).
+- `epochMillis` = the server-side timestamp in **milliseconds** at generation
+  time (re-fetched a few hundred ms later, the value tracks the wall clock).
+- `digest` = 32 hex chars (128-bit). **This is a server-side signature and is
+  not reproducible client-side**: the digest changes on every request even
+  with the same token pair, and extensive brute-forcing (MD5/MD4/SHA-1/
+  SHA-256/512/RIPEMD-160, HMAC variants, and raw byte encodings) of the
+  member ref + timestamp + every client-visible secret (tokens, client id/
+  secret, profile fields, app constants) yields no match. The APK confirms
+  this: `GetQrInteractorImp` only renders the returned string and never
+  parses or verifies the digest — validation happens in Exerp's turnstile
+  scanners, which hold the signing secret.
+
+The payload must therefore be treated as **opaque**: pass it through and
+render it unchanged; never modify or regenerate it. Any expiry/anti-replay
+window is encoded server-side inside the digest + timestamp.
+
 > Note: the `exerp` path indicates this talks to the **Exerp** gym-management
 > platform (the same system used by VivaGym's access control / turnstiles).
 
