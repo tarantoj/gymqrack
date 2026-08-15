@@ -40,6 +40,8 @@ in
     oxlint.enable = true;
     # Validate JSON syntax.
     check-json.enable = true;
+    # Format TOML files with taplo.
+    taplo.enable = true;
     # Lint GitHub Actions workflow files.
     actionlint.enable = true;
     # htmx.min.js is a vendored minified library; never reformat or lint it.
