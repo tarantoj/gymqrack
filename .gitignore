@@ -7,3 +7,14 @@ apk/jadx-out/
 /.devenv/
 /result
 /.pre-commit-config.yaml
+
+# devenv-generated opencode config (source of truth: devenv.nix)
+.opencode
+opencode.jsonc
+
+# devenv locals
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
