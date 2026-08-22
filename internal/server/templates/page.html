@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#fd5000" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141416" />
   <meta name="format-detection" content="telephone=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -14,6 +16,51 @@
   <title>Gymqrack Entry QR</title>
   <style>
     * { box-sizing: border-box; }
+    :root {
+      color-scheme: light dark;
+      --brand: #fd5000;
+      --bg: #f4f4f6;
+      --fg: #1a1a1a;
+      --card: #fff;
+      --card-border: #e4e4e8;
+      --input-bg: #fafafa;
+      --input-border: #d5d5db;
+      --secondary: #e4e4e8;
+      --secondary-fg: #1a1a1a;
+      --error: #c62828;
+      --muted: #6b6b73;
+      --faint: #8a8a92;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141416;
+        --fg: #f0f0f4;
+        --card: #1e1e23;
+        --card-border: #2e2e35;
+        --input-bg: #17171b;
+        --input-border: #3a3a42;
+        --secondary: #2a2a31;
+        --secondary-fg: #f0f0f4;
+        --error: #ff7b7b;
+        --muted: #9a9aa3;
+        --faint: #6f6f78;
+      }
+    }
+    @supports (color: light-dark(#000, #fff)) {
+      :root {
+        --bg: light-dark(#f4f4f6, #141416);
+        --fg: light-dark(#1a1a1a, #f0f0f4);
+        --card: light-dark(#fff, #1e1e23);
+        --card-border: light-dark(#e4e4e8, #2e2e35);
+        --input-bg: light-dark(#fafafa, #17171b);
+        --input-border: light-dark(#d5d5db, #3a3a42);
+        --secondary: light-dark(#e4e4e8, #2a2a31);
+        --secondary-fg: light-dark(#1a1a1a, #f0f0f4);
+        --error: light-dark(#c62828, #ff7b7b);
+        --muted: light-dark(#6b6b73, #9a9aa3);
+        --faint: light-dark(#8a8a92, #6f6f78);
+      }
+    }
     body {
       margin: 0;
       min-height: 100vh;
@@ -22,17 +69,18 @@
       align-items: center;
       justify-content: center;
       gap: 16px;
-      background: #f4f4f6;
-      color: #1a1a1a;
+      background: var(--bg);
+      color: var(--fg);
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       text-align: center;
       padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
     }
-    h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: #fd5000; }
+    h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--brand); }
+    label { font-size: 0.85rem; font-weight: 600; color: var(--muted); text-align: left; }
     .card {
       width: min(90vw, 360px);
-      background: #fff;
-      border: 1px solid #e4e4e8;
+      background: var(--card);
+      border: 1px solid var(--card-border);
       border-radius: 16px;
       padding: 24px;
       display: flex;
@@ -43,23 +91,41 @@
       width: 100%;
       padding: 12px;
       border-radius: 10px;
-      border: 1px solid #d5d5db;
-      background: #fafafa;
-      color: #1a1a1a;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg);
+      color: var(--fg);
       font-size: 1rem;
+    }
+    input:user-invalid {
+      border-color: var(--error);
+      box-shadow: 0 0 0 1px var(--error);
     }
     button {
       padding: 12px;
       border: none;
       border-radius: 10px;
-      background: #fd5000;
+      background: var(--brand);
       color: #fff;
       font-size: 1rem;
       font-weight: 600;
       cursor: pointer;
     }
-    button.secondary { background: #e4e4e8; color: #1a1a1a; }
-    .error { color: #d33; font-size: 0.85rem; min-height: 1.2em; }
+    button.secondary { background: var(--secondary); color: var(--secondary-fg); }
+    .pass { display: flex; gap: 8px; }
+    .pass input { flex: 1; }
+    .toggle-pass {
+      flex: none;
+      padding: 0 14px;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    .error { color: var(--error); font-size: 0.85rem; min-height: 1.2em; }
+    .forgot { margin: 0; font-size: 0.8rem; text-align: right; }
+    .forgot a { color: var(--muted); }
     .topbar {
       width: min(90vw, 360px);
       display: flex;
@@ -67,10 +133,11 @@
       justify-content: space-between;
       gap: 12px;
     }
-    .topbar .email { font-size: 0.85rem; color: #6b6b73; overflow: hidden; text-overflow: ellipsis; }
+    .topbar .email { font-size: 0.85rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
     .topbar button { padding: 8px 14px; font-size: 0.85rem; }
     .topbar, #qrWrap { user-select: none; -webkit-user-select: none; }
     #qrWrap {
+      /* Fixed white tile: a QR needs a light background to scan reliably. */
       background: #fff;
       padding: 16px;
       border-radius: 16px;
@@ -81,9 +148,9 @@
       max-width: 340px;
       font-size: 0.95rem;
       line-height: 1.4;
-      color: #4a4a52;
+      color: var(--muted);
     }
-    #status { margin: 0; font-size: 0.85rem; color: #8a8a92; }
+    #status { margin: 0; font-size: 0.85rem; color: var(--faint); }
     .hidden { display: none !important; }
   </style>
 </head>

@@ -3,6 +3,7 @@
   "short_name": "Gymqrack QR",
   "description": "Live gym-entry QR for VivaGym members.",
   "start_url": "/",
+  "id": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f4f4f6",
