@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -149,6 +150,82 @@ func TestIndexRendersQRWhenAuthenticated(t *testing.T) {
 	}
 	if img := extractTag(body, `<img`, ">"); strings.Contains(img, "exerp:checkin:1") {
 		t.Fatalf("payload must not be echoed in the QR image markup:\n%s", img)
+	}
+}
+
+func TestIndexMakesNoUpstreamCalls(t *testing.T) {
+	var hits int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		switch r.URL.Path {
+		case "/api/email/refresh":
+			json.NewEncoder(w).Encode(map[string]any{
+				"access_token":  "access-2",
+				"refresh_token": "refresh-2",
+				"expires_in":    600,
+			})
+		case "/api/v2.0/exerp/qr":
+			p, _ := json.Marshal("exerp:checkin:1")
+			w.Write(p)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	client := vivagym.New(upstream.URL, "cid", "secret", "es")
+	s := New(Config{PublicURL: "http://localhost:4567", VivaGymClient: client})
+
+	// Expired access token with a valid refresh token: rendering the index must
+	// not refresh or fetch the payload — the /qr/png request does that on load.
+	tok := Tokens{
+		AccessToken:  "access-1",
+		RefreshToken: "refresh-1",
+		ExpiresIn:    600,
+		IssuedAt:     time.Now().Add(-20 * time.Minute).UnixMilli(),
+		Email:        "u@e.com",
+	}
+	cookie := &http.Cookie{Name: cookieName, Value: encodeTokens(tok), Path: "/"}
+	rec, _ := doJSON(t, s.Handler(), http.MethodGet, "/", "", []*http.Cookie{cookie})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("index status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `id="qrView"`) {
+		t.Fatalf("expected QR view:\n%s", rec.Body.String())
+	}
+	if n := atomic.LoadInt32(&hits); n != 0 {
+		t.Fatalf("index made %d upstream calls, want 0", n)
+	}
+}
+
+func TestIndexShowsLoginForDeadSession(t *testing.T) {
+	var hits int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		http.NotFound(w, r)
+	}))
+	defer upstream.Close()
+	client := vivagym.New(upstream.URL, "cid", "secret", "es")
+	s := New(Config{PublicURL: "http://localhost:4567", VivaGymClient: client})
+
+	// Expired access token with no refresh token: nothing can renew the session,
+	// so the index must render login without contacting VivaGym.
+	tok := Tokens{
+		AccessToken:  "access-1",
+		RefreshToken: "",
+		ExpiresIn:    600,
+		IssuedAt:     time.Now().Add(-20 * time.Minute).UnixMilli(),
+		Email:        "u@e.com",
+	}
+	cookie := &http.Cookie{Name: cookieName, Value: encodeTokens(tok), Path: "/"}
+	rec, _ := doJSON(t, s.Handler(), http.MethodGet, "/", "", []*http.Cookie{cookie})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("index status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `id="loginView"`) {
+		t.Fatalf("expected login view:\n%s", rec.Body.String())
+	}
+	if n := atomic.LoadInt32(&hits); n != 0 {
+		t.Fatalf("index made %d upstream calls, want 0", n)
 	}
 }
 

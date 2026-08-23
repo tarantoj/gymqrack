@@ -167,12 +167,27 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // handleIndex renders the full page, showing the sign-in form when the visitor
 // has no valid session and the live QR view otherwise.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	v := s.resolveView(w, r)
+	v := s.indexView(r)
 	if v.login != nil {
 		renderPage(w, pageData{Login: v.login})
 		return
 	}
 	renderPage(w, pageData{QR: v.qr})
+}
+
+// indexView resolves the full-page view from local session state only, so
+// loading the page never makes an upstream VivaGym call: the first /qr/png
+// request does the real validation and token refresh.
+func (s *Server) indexView(r *http.Request) view {
+	t, ok := readTokens(r)
+	if !ok {
+		return view{login: &loginData{}}
+	}
+	if t.RefreshToken == "" && !s.isAccessTokenValid(t) {
+		return view{login: &loginData{}}
+	}
+	d := qrView(t.Email)
+	return view{qr: &d}
 }
 
 func (s *Server) clientIP(r *http.Request) string {
