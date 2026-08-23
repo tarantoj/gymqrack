@@ -136,19 +136,19 @@ func TestIndexRendersQRWhenAuthenticated(t *testing.T) {
 		t.Fatalf("index status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`id="qrView"`, "user@example.com", "<svg", `hx-get="/qr/fragment"`, "tabvisible", "personal and non-transferable"} {
+	for _, want := range []string{`id="qrView"`, "user@example.com", `src="/qr/png`, `hx-get="/qr/fragment"`, "tabvisible", "personal and non-transferable"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("index missing %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, `src="/qr.svg`) {
-		t.Fatalf("index should inline the SVG, not reference it by URL:\n%s", body)
+	if strings.Contains(body, "data:image/png") {
+		t.Fatalf("index should reference the PNG by URL, not inline it:\n%s", body)
 	}
 	if strings.Contains(body, "Updated Updated") {
 		t.Fatalf("status should not repeat the Updated label:\n%s", body)
 	}
-	if svg := extractTag(body, "<svg", "</svg>"); strings.Contains(svg, "exerp:checkin:1") {
-		t.Fatalf("payload must not be echoed as SVG text content:\n%s", svg)
+	if img := extractTag(body, `<img`, ">"); strings.Contains(img, "exerp:checkin:1") {
+		t.Fatalf("payload must not be echoed in the QR image markup:\n%s", img)
 	}
 }
 
@@ -165,7 +165,7 @@ func TestLoginJSONSuccess(t *testing.T) {
 		t.Fatal("no Set-Cookie on login")
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`id="qrView"`, "user@example.com", "<svg"} {
+	for _, want := range []string{`id="qrView"`, "user@example.com", `src="/qr/png`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("login response missing %q:\n%s", want, body)
 		}
@@ -185,7 +185,7 @@ func TestLoginFormSuccess(t *testing.T) {
 		t.Fatal("no Set-Cookie on login")
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`id="qrView"`, "user@example.com", "<svg"} {
+	for _, want := range []string{`id="qrView"`, "user@example.com", `src="/qr/png`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("login response missing %q:\n%s", want, body)
 		}
@@ -262,15 +262,8 @@ func TestQRRefreshRotation(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("qr fragment status = %d, body=%s", rec.Code, rec.Body)
 	}
-	// The raw payload is no longer echoed as text; the refreshed payload must
-	// instead be rendered into the inline QR SVG.
-	svg := extractTag(rec.Body.String(), "<svg", "</svg>")
-	wantSVG, err := qr.SVG("exerp:checkin:2")
-	if err != nil {
-		t.Fatalf("qr.SVG: %v", err)
-	}
-	if strings.TrimSpace(svg) != strings.TrimSpace(string(wantSVG)) {
-		t.Fatalf("fragment did not render the refreshed payload:\n%s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `src="/qr/png`) {
+		t.Fatalf("fragment should reference the QR image by URL:\n%s", rec.Body.String())
 	}
 	if len(cookies) == 0 {
 		t.Fatal("expected rotated cookie")
@@ -279,6 +272,74 @@ func TestQRRefreshRotation(t *testing.T) {
 	rotated, ok := decodeTokens(raw)
 	if !ok || rotated.AccessToken != "access-2" {
 		t.Fatalf("cookie not rotated: %+v", rotated)
+	}
+}
+
+func TestQRPNGRendersPayload(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+
+	rec, _ := doJSON(t, h, http.MethodGet, "/qr/png", "", []*http.Cookie{seededCookie("u@e.com")})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("png status = %d, body=%s", rec.Code, rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("Content-Type = %q, want image/png", ct)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", cc)
+	}
+	want, err := qr.PNG("exerp:checkin:1")
+	if err != nil {
+		t.Fatalf("qr.PNG: %v", err)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), want) {
+		t.Fatal("png body does not match the expected payload rendering")
+	}
+}
+
+func TestQRPNGRefreshesToken(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+
+	// Expired access token but valid refresh token: /qr/png must transparently
+	// refresh and render the *new* payload, rotating the session cookie.
+	tok := Tokens{
+		AccessToken:  "access-1",
+		RefreshToken: "refresh-1",
+		ExpiresIn:    600,
+		IssuedAt:     time.Now().Add(-20 * time.Minute).UnixMilli(),
+		Email:        "u@e.com",
+	}
+	cookie := &http.Cookie{Name: cookieName, Value: encodeTokens(tok), Path: "/"}
+	rec, cookies := doJSON(t, h, http.MethodGet, "/qr/png", "", []*http.Cookie{cookie})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("png status = %d, body=%s", rec.Code, rec.Body)
+	}
+	want, err := qr.PNG("exerp:checkin:2")
+	if err != nil {
+		t.Fatalf("qr.PNG: %v", err)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), want) {
+		t.Fatal("png body does not match the refreshed payload rendering")
+	}
+	if len(cookies) == 0 {
+		t.Fatal("expected rotated cookie")
+	}
+	raw := cookieValue(cookies, cookieName)
+	rotated, ok := decodeTokens(raw)
+	if !ok || rotated.AccessToken != "access-2" {
+		t.Fatalf("cookie not rotated: %+v", rotated)
+	}
+}
+
+func TestQRPNGUnauthenticated(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+
+	rec, _ := doJSON(t, h, http.MethodGet, "/qr/png", "", nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated png status = %d, want 401", rec.Code)
 	}
 }
 

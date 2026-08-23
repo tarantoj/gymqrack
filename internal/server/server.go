@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
+
 	"log/slog"
 	"net"
 	"net/http"
@@ -66,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /qr/fragment", s.handleQRFragment)
 	mux.HandleFunc("GET /qr/payload", s.handleQRPayload)
+	mux.HandleFunc("GET /qr/png", s.handleQRPNG)
 	if s.cfg.PublicDir != "" {
 		files := http.FileServer(noListingFS{http.Dir(s.cfg.PublicDir)})
 		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -239,8 +240,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		IssuedAt:     time.Now().UnixMilli(),
 		Email:        email,
 	})
-	payload, err := s.cfg.VivaGymClient.FetchQr(r.Context(), pair.AccessToken)
-	renderQR(w, qrDataFor(email, payload, err))
+	renderQR(w, qrView(email))
 }
 
 // validCredentials reports whether an email/password pair passes basic checks.
@@ -253,28 +253,16 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	renderLogin(w, loginData{})
 }
 
-// qrView builds the QR fragment state, rendering the payload as an inline SVG
-// so the fragment needs no follow-up image request.
-func qrView(email, payload string) (qrData, error) {
-	svg, err := qr.SVG(payload)
-	if err != nil {
-		return qrData{}, err
-	}
-	return qrData{
-		Email:   email,
-		QR:      template.HTML(svg),
-		Updated: time.Now().Format(time.Kitchen),
-		Payload: payload,
-	}, nil
+// qrView builds the QR fragment state for email.
+func qrView(email string) qrData {
+	return qrData{Email: email, Updated: time.Now().Format(time.Kitchen)}
 }
 
-// qrDataFor builds the QR view state for a payload, falling back to a
-// transient error state when payload is unavailable or cannot be rendered.
-func qrDataFor(email, payload string, err error) qrData {
+// qrDataFor builds the QR view state, falling back to a transient error state
+// when the payload is unavailable.
+func qrDataFor(email string, err error) qrData {
 	if err == nil {
-		if d, verr := qrView(email, payload); verr == nil {
-			return d
-		}
+		return qrView(email)
 	}
 	return qrData{Email: email, Updated: "Could not refresh QR"}
 }
@@ -286,17 +274,17 @@ type sessionView struct {
 	qr    *qrData
 }
 
-// sessionView resolves the current session to a view, fetching (and refreshing)
-// the QR payload as needed.
+// sessionView resolves the current session to a view, probing the QR payload
+// (fetching and refreshing it) only to decide whether the session is alive.
 func (s *Server) sessionView(w http.ResponseWriter, r *http.Request) sessionView {
-	payload, status, err := s.qrResult(w, r)
+	_, status, err := s.qrResult(w, r)
 	if err != nil {
 		if status == http.StatusUnauthorized {
 			return sessionView{login: &loginData{}}
 		}
 	}
 	email, _ := readTokens(r)
-	d := qrDataFor(email.Email, payload, err)
+	d := qrDataFor(email.Email, err)
 	return sessionView{qr: &d}
 }
 
@@ -407,6 +395,26 @@ func (s *Server) handleQRPayload(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(payload))
+}
+
+// handleQRPNG serves the QR payload rendered as a PNG, using the same session
+// cookie (with transparent token refresh) as the QR view. The browser fetches
+// it on every fragment poll, so it must never be cached: the payload rotates
+// continuously and a stale image would be wrong.
+func (s *Server) handleQRPNG(w http.ResponseWriter, r *http.Request) {
+	payload, status, err := s.qrResult(w, r)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+	png, err := qr.PNG(payload)
+	if err != nil {
+		http.Error(w, "could not render QR", http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
 }
 
 // loginWithBasicAuth validates HTTP Basic credentials against VivaGym,

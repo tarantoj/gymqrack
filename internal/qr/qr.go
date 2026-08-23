@@ -1,12 +1,11 @@
-// Package qr renders QR codes as SVG images.
+// Package qr renders QR codes as PNG images.
 package qr
 
-import (
-	go_qr "github.com/piglig/go-qr"
-)
+import "rsc.io/qr"
 
-// border is the quiet-zone width in modules, matching the VivaGym app's ZXing
-// `QRCodeWriter.encode(payload, QR_CODE, 512, 512)` default margin
+// border is the quiet-zone width in modules. rsc.io/qr's PNG output always
+// frames the symbol with a 4-module white border, matching the VivaGym app's
+// ZXing `QRCodeWriter.encode(payload, QR_CODE, 512, 512)` default margin
 // (`QUIET_ZONE_SIZE = 4`).
 const border = 4
 
@@ -23,18 +22,12 @@ func scaleFor(modules int) int {
 	return 1
 }
 
-func encode(payload string) (*go_qr.QrCode, error) {
-	// Low error correction matches ZXing's default (QRCodeWriter uses L when no
-	// hint is supplied), keeping the rendered pattern identical to the app.
-	return go_qr.EncodeText(payload, go_qr.Low)
-}
-
-// SVG renders payload as a compact single-path SVG with a 4-module quiet zone,
-// matching the VivaGym app's ZXing rendering.
-func SVG(payload string) ([]byte, error) {
-	q, err := encode(payload)
+// PNG renders payload as a 1-bit grayscale PNG with a 4-module quiet zone.
+func PNG(payload string) ([]byte, error) {
+	c, err := qr.Encode(payload, qr.L)
 	if err != nil {
 		return nil, err
 	}
-	return q.ToSVGBytes(go_qr.NewQrCodeImgConfig(scaleFor(q.Size()), border, go_qr.WithOptimalSVG()))
+	c.Scale = scaleFor(c.Size)
+	return c.PNG(), nil
 }

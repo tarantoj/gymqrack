@@ -16,14 +16,12 @@ type loginData struct {
 	Error string
 }
 
-// qrData is the fragment state for the live QR view. QR holds the SVG markup
-// rendered by the server; it is deliberately unescaped (template.HTML) because
-// the QR library only emits inert module shapes and never echoes payload text.
+// qrData is the fragment state for the live QR view. The QR image itself is a
+// separate request to /qr/png, so the fragment carries no payload bytes (the
+// payload is only ever encoded into the image, never into HTML).
 type qrData struct {
 	Email   string
-	QR      template.HTML
 	Updated string
-	Payload string
 }
 
 // pageData is the top-level state for the full page; one of the two embedded

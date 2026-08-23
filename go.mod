@@ -3,8 +3,6 @@ module gymqrack
 go 1.26.5
 
 require (
-	github.com/piglig/go-qr v1.1.0
 	golang.org/x/time v0.15.0
+	rsc.io/qr v0.2.0
 )
-
-require github.com/stretchr/testify v1.11.1 // indirect
