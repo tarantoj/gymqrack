@@ -52,27 +52,23 @@ func (s *Server) secureCookies() bool {
 }
 
 func (s *Server) writeTokens(w http.ResponseWriter, t Tokens) {
-	cookie := &http.Cookie{
-		Name:     cookieName,
-		Value:    encodeTokens(t),
-		Path:     "/",
-		MaxAge:   s.cfg.CookieMaxAge,
-		HttpOnly: true,
-		Secure:   s.secureCookies(),
-		SameSite: http.SameSiteLaxMode,
-	}
-	http.SetCookie(w, cookie)
+	s.setSessionCookie(w, encodeTokens(t), s.cfg.CookieMaxAge)
 }
 
 func (s *Server) clearTokens(w http.ResponseWriter) {
-	cookie := &http.Cookie{
+	s.setSessionCookie(w, "", -1)
+}
+
+// setSessionCookie writes a session cookie with the standard flags: path "/",
+// HttpOnly, SameSite=Lax, and Secure when serving over https.
+func (s *Server) setSessionCookie(w http.ResponseWriter, value string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
-		Value:    "",
+		Value:    value,
 		Path:     "/",
-		MaxAge:   -1,
+		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   s.secureCookies(),
 		SameSite: http.SameSiteLaxMode,
-	}
-	http.SetCookie(w, cookie)
+	})
 }

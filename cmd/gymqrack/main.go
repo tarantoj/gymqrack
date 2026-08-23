@@ -40,9 +40,16 @@ func envInt(name string, def int) int {
 	return def
 }
 
-func main() {
-	slog.SetDefault(slog.New(newLogHandler()))
+// runConfig bundles the process configuration resolved from the environment.
+type runConfig struct {
+	server   *server.Config
+	httpAddr string
+	socket   string
+	sockGID  string
+}
 
+// configFromEnv assembles the runtime configuration from environment variables.
+func configFromEnv() (runConfig, error) {
 	port := envInt("PORT", 4567)
 	host := os.Getenv("HOST")
 	if host == "" {
@@ -61,20 +68,33 @@ func main() {
 	clientID := os.Getenv("GYMQRACK_CLIENT_ID")
 	clientSecret := os.Getenv("GYMQRACK_CLIENT_SECRET")
 	if clientID == "" || clientSecret == "" {
-		slog.Error("GYMQRACK_CLIENT_ID and GYMQRACK_CLIENT_SECRET must be set")
-		os.Exit(1)
+		return runConfig{}, errors.New("GYMQRACK_CLIENT_ID and GYMQRACK_CLIENT_SECRET must be set")
 	}
 
-	client := vivagym.New(vivagym.BaseURL, clientID, clientSecret, locale)
+	return runConfig{
+		server: &server.Config{
+			PublicURL:       publicURL,
+			TrustProxy:      os.Getenv("TRUST_PROXY") == "1",
+			CookieMaxAge:    envInt("COOKIE_MAX_AGE_DAYS", 7) * 86_400,
+			LoginRatePerMin: envInt("LOGIN_RATE_PER_MIN", 10),
+			VivaGymClient:   vivagym.New(vivagym.BaseURL, clientID, clientSecret, locale),
+			PublicDir:       publicDir(),
+		},
+		httpAddr: fmt.Sprintf("%s:%d", host, port),
+		socket:   os.Getenv("SOCKET"),
+		sockGID:  os.Getenv("SOCKET_GID"),
+	}, nil
+}
 
-	srv := server.New(server.Config{
-		PublicURL:       publicURL,
-		TrustProxy:      os.Getenv("TRUST_PROXY") == "1",
-		CookieMaxAge:    envInt("COOKIE_MAX_AGE_DAYS", 7) * 86_400,
-		LoginRatePerMin: envInt("LOGIN_RATE_PER_MIN", 10),
-		VivaGymClient:   client,
-		PublicDir:       publicDir(),
-	})
+func main() {
+	slog.SetDefault(slog.New(newLogHandler()))
+
+	cfg, err := configFromEnv()
+	if err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+	srv := server.New(*cfg.server)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -88,26 +108,23 @@ func main() {
 	}
 
 	var ln net.Listener
-	if sock := os.Getenv("SOCKET"); sock != "" {
-		var err error
-		ln, err = listenUnix(sock, os.Getenv("SOCKET_GID"))
+	if cfg.socket != "" {
+		ln, err = listenUnix(cfg.socket, cfg.sockGID)
 		if err != nil {
-			slog.Error("cannot listen on unix socket", "socket", sock, "error", err)
+			slog.Error("cannot listen on unix socket", "socket", cfg.socket, "error", err)
 			os.Exit(1)
 		}
 	} else {
-		addr := fmt.Sprintf("%s:%d", host, port)
-		httpServer.Addr = addr
-		var err error
-		ln, err = net.Listen("tcp", addr)
+		httpServer.Addr = cfg.httpAddr
+		ln, err = net.Listen("tcp", cfg.httpAddr)
 		if err != nil {
-			slog.Error("cannot listen", "addr", addr, "error", err)
+			slog.Error("cannot listen", "addr", cfg.httpAddr, "error", err)
 			os.Exit(1)
 		}
 	}
 
 	go func() {
-		slog.Info("gymqrack live QR running", "url", publicURL, "addr", ln.Addr())
+		slog.Info("gymqrack live QR running", "url", cfg.server.PublicURL, "addr", ln.Addr())
 		if err := httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("server failed", "error", err)
 			stop()

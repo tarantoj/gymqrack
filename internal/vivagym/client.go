@@ -96,6 +96,22 @@ type tokenResponse struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
+// parseTokenResponse decodes a token response, failing on malformed data or a
+// missing access token. A missing expires_in defaults to 10 minutes.
+func parseTokenResponse(data []byte, what string) (tokenResponse, error) {
+	var resp tokenResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return tokenResponse{}, &VivaGymError{Message: what + " returned an invalid response", Status: 502}
+	}
+	if resp.AccessToken == "" {
+		return tokenResponse{}, &VivaGymError{Message: what + " returned no access_token", Status: 502}
+	}
+	if resp.ExpiresIn == 0 {
+		resp.ExpiresIn = 600
+	}
+	return resp, nil
+}
+
 // Stage 1: anonymous app-level token (client_credentials grant).
 func (c *Client) clientCredentials(ctx context.Context) (string, error) {
 	body, _ := json.Marshal(map[string]string{
@@ -108,12 +124,9 @@ func (c *Client) clientCredentials(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var resp tokenResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return "", &VivaGymError{Message: "client_credentials returned an invalid response", Status: 502}
-	}
-	if resp.AccessToken == "" {
-		return "", &VivaGymError{Message: "client_credentials returned no access_token", Status: 502}
+	resp, err := parseTokenResponse(data, "client_credentials")
+	if err != nil {
+		return "", err
 	}
 	return resp.AccessToken, nil
 }
@@ -136,15 +149,9 @@ func (c *Client) Login(ctx context.Context, email, password string) (TokenPair, 
 	if err != nil {
 		return TokenPair{}, err
 	}
-	var resp tokenResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return TokenPair{}, &VivaGymError{Message: "login returned an invalid response", Status: 502}
-	}
-	if resp.AccessToken == "" {
-		return TokenPair{}, &VivaGymError{Message: "login returned no access_token", Status: 502}
-	}
-	if resp.ExpiresIn == 0 {
-		resp.ExpiresIn = 600
+	resp, err := parseTokenResponse(data, "login")
+	if err != nil {
+		return TokenPair{}, err
 	}
 	return TokenPair(resp), nil
 }
@@ -156,15 +163,9 @@ func (c *Client) RefreshTokens(ctx context.Context, refreshToken string) (TokenP
 	if err != nil {
 		return TokenPair{}, err
 	}
-	var resp tokenResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return TokenPair{}, &VivaGymError{Message: "refresh returned an invalid response", Status: 502}
-	}
-	if resp.AccessToken == "" {
-		return TokenPair{}, &VivaGymError{Message: "refresh returned no access_token", Status: 502}
-	}
-	if resp.ExpiresIn == 0 {
-		resp.ExpiresIn = 600
+	resp, err := parseTokenResponse(data, "refresh")
+	if err != nil {
+		return TokenPair{}, err
 	}
 	if resp.RefreshToken == "" {
 		resp.RefreshToken = refreshToken

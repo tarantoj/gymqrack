@@ -167,12 +167,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // handleIndex renders the full page, showing the sign-in form when the visitor
 // has no valid session and the live QR view otherwise.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	v := s.sessionView(w, r)
+	v := s.resolveView(w, r)
 	if v.login != nil {
-		renderPage(w, pageData{View: "login", loginData: *v.login})
+		renderPage(w, pageData{Login: v.login})
 		return
 	}
-	renderPage(w, pageData{View: "qr", qrData: *v.qr})
+	renderPage(w, pageData{QR: v.qr})
 }
 
 func (s *Server) clientIP(r *http.Request) string {
@@ -190,12 +190,6 @@ func (s *Server) clientIP(r *http.Request) string {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	ip := s.clientIP(r)
-	if !s.limiter.allow(ip) {
-		renderLogin(w, loginData{Error: "Too many attempts, try again later"})
-		return
-	}
-
 	var email, password string
 	switch ct := r.Header.Get("Content-Type"); {
 	case strings.HasPrefix(ct, "application/json"):
@@ -220,17 +214,41 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	switch _, loggedEmail, err := s.signIn(w, r, email, password); {
+	case errors.Is(err, errRateLimited):
+		renderLogin(w, loginData{Error: "Too many attempts, try again later"})
+	case errors.Is(err, errInvalidCredentials):
+		renderLogin(w, loginData{Error: "Invalid email or password"})
+	case err != nil:
+		slog.WarnContext(r.Context(), "login failed", "email", loggedEmail, "error", err)
+		renderLogin(w, loginData{Error: "Invalid credentials"})
+	default:
+		renderQR(w, qrView(loggedEmail))
+	}
+}
+
+var (
+	errRateLimited        = errors.New("too many attempts")
+	errInvalidCredentials = errors.New("invalid credentials")
+)
+
+// signIn enforces the login rate limit, validates the credentials, logs the
+// member in, and installs their session cookie. On success it returns the token
+// pair and the normalized email with a nil error. Failures are one of
+// errRateLimited, errInvalidCredentials (local input rejection), or the
+// upstream VivaGym error.
+func (s *Server) signIn(w http.ResponseWriter, r *http.Request, email, password string) (vivagym.TokenPair, string, error) {
+	ip := s.clientIP(r)
+	if !s.limiter.allow(ip) {
+		return vivagym.TokenPair{}, "", errRateLimited
+	}
 	email = strings.ToLower(strings.TrimSpace(email))
 	if !validCredentials(email, password) {
-		renderLogin(w, loginData{Error: "Invalid email or password"})
-		return
+		return vivagym.TokenPair{}, email, errInvalidCredentials
 	}
-
 	pair, err := s.cfg.VivaGymClient.Login(r.Context(), email, password)
 	if err != nil {
-		slog.WarnContext(r.Context(), "login failed", "email", email, "error", err)
-		renderLogin(w, loginData{Error: "Invalid credentials"})
-		return
+		return vivagym.TokenPair{}, email, err
 	}
 	s.limiter.reset(ip)
 	s.writeTokens(w, Tokens{
@@ -240,7 +258,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		IssuedAt:     time.Now().UnixMilli(),
 		Email:        email,
 	})
-	renderQR(w, qrView(email))
+	return pair, email, nil
 }
 
 // validCredentials reports whether an email/password pair passes basic checks.
@@ -268,25 +286,25 @@ func qrDataFor(email string, err error) qrData {
 	return qrData{Email: email, Updated: "Could not refresh QR"}
 }
 
-// sessionView is the rendered response for a session-dependent request: either
-// the login form or the live QR view. Exactly one field is non-nil.
-type sessionView struct {
+// view is the rendered response for a session-dependent request: either the
+// login form or the live QR view. Exactly one field is non-nil.
+type view struct {
 	login *loginData
 	qr    *qrData
 }
 
-// sessionView resolves the current session to a view, probing the QR payload
+// resolveView resolves the current session to a view, probing the QR payload
 // (fetching and refreshing it) only to decide whether the session is alive.
-func (s *Server) sessionView(w http.ResponseWriter, r *http.Request) sessionView {
+func (s *Server) resolveView(w http.ResponseWriter, r *http.Request) view {
 	_, status, err := s.qrResult(w, r)
 	if err != nil {
 		if status == http.StatusUnauthorized {
-			return sessionView{login: &loginData{}}
+			return view{login: &loginData{}}
 		}
 	}
 	email, _ := readTokens(r)
 	d := qrDataFor(email.Email, err)
-	return sessionView{qr: &d}
+	return view{qr: &d}
 }
 
 func (s *Server) isAccessTokenValid(t Tokens) bool {
@@ -307,16 +325,24 @@ func (s *Server) validTokens(w http.ResponseWriter, r *http.Request) (Tokens, bo
 	if s.isAccessTokenValid(t) {
 		return t, true
 	}
+	t, err := s.refreshSession(w, r, t)
+	return t, err == nil
+}
+
+// refreshSession renews t's access token through the refresh grant, installing
+// the rotated tokens into the session cookie. The session is cleared when the
+// refresh itself fails.
+func (s *Server) refreshSession(w http.ResponseWriter, r *http.Request, t Tokens) (Tokens, error) {
 	if t.RefreshToken == "" {
-		return Tokens{}, false
+		return Tokens{}, errors.New("no refresh token")
 	}
 	fresh, err := s.cfg.VivaGymClient.RefreshTokens(r.Context(), t.RefreshToken)
 	if err != nil {
 		s.clearTokens(w)
-		return Tokens{}, false
+		return Tokens{}, err
 	}
 	s.rotateTokens(w, &t, fresh)
-	return t, true
+	return t, nil
 }
 
 // rotateTokens installs fresh tokens into the session cookie.
@@ -347,9 +373,8 @@ func (s *Server) qrResult(w http.ResponseWriter, r *http.Request) (string, int, 
 		return payload, http.StatusOK, nil
 	}
 	if t.RefreshToken != "" && unauthorized(err) {
-		if fresh, rerr := s.cfg.VivaGymClient.RefreshTokens(r.Context(), t.RefreshToken); rerr == nil {
-			s.rotateTokens(w, &t, fresh)
-			payload, err = s.cfg.VivaGymClient.FetchQr(r.Context(), t.AccessToken)
+		if fresh, rerr := s.refreshSession(w, r, t); rerr == nil {
+			payload, err = s.cfg.VivaGymClient.FetchQr(r.Context(), fresh.AccessToken)
 			if err == nil {
 				return payload, http.StatusOK, nil
 			}
@@ -366,7 +391,7 @@ func (s *Server) qrResult(w http.ResponseWriter, r *http.Request) (string, int, 
 // the session has expired it renders the login form instead (with a 200) so the
 // poller replaces itself and stops.
 func (s *Server) handleQRFragment(w http.ResponseWriter, r *http.Request) {
-	v := s.sessionView(w, r)
+	v := s.resolveView(w, r)
 	if v.login != nil {
 		v.login.Error = "Session expired, sign in again"
 		renderLogin(w, *v.login)
@@ -423,27 +448,16 @@ func (s *Server) handleQRPNG(w http.ResponseWriter, r *http.Request) {
 // installs the resulting session cookie, and returns the freshly fetched QR
 // payload.
 func (s *Server) loginWithBasicAuth(w http.ResponseWriter, r *http.Request, email, password string) (string, int, error) {
-	ip := s.clientIP(r)
-	if !s.limiter.allow(ip) {
+	pair, loggedEmail, err := s.signIn(w, r, email, password)
+	switch {
+	case errors.Is(err, errRateLimited):
 		return "", http.StatusTooManyRequests, errors.New("too many attempts, try again later")
-	}
-	email = strings.ToLower(strings.TrimSpace(email))
-	if !validCredentials(email, password) {
+	case errors.Is(err, errInvalidCredentials):
+		return "", http.StatusUnauthorized, errors.New("invalid credentials")
+	case err != nil:
+		slog.WarnContext(r.Context(), "basic login failed", "email", loggedEmail, "error", err)
 		return "", http.StatusUnauthorized, errors.New("invalid credentials")
 	}
-	pair, err := s.cfg.VivaGymClient.Login(r.Context(), email, password)
-	if err != nil {
-		slog.WarnContext(r.Context(), "basic login failed", "email", email, "error", err)
-		return "", http.StatusUnauthorized, errors.New("invalid credentials")
-	}
-	s.limiter.reset(ip)
-	s.writeTokens(w, Tokens{
-		AccessToken:  pair.AccessToken,
-		RefreshToken: pair.RefreshToken,
-		ExpiresIn:    pair.ExpiresIn,
-		IssuedAt:     time.Now().UnixMilli(),
-		Email:        email,
-	})
 	payload, err := s.cfg.VivaGymClient.FetchQr(r.Context(), pair.AccessToken)
 	if err != nil {
 		return "", http.StatusBadGateway, err

@@ -27,25 +27,21 @@ type qrData struct {
 	Nonce   int64
 }
 
-// pageData is the top-level state for the full page; one of the two embedded
-// views is rendered depending on View.
+// pageData is the top-level state for the full page; the embedded view renders
+// the login form or the QR view depending on which pointer is set.
 type pageData struct {
-	View string
-	loginData
-	qrData
+	Login *loginData
+	QR    *qrData
 }
 
-func renderLogin(w http.ResponseWriter, d loginData) {
+// render executes a named template with the given data, setting an HTML Content-Type.
+func render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = pageTemplates.ExecuteTemplate(w, "login", d)
+	_ = pageTemplates.ExecuteTemplate(w, name, data)
 }
 
-func renderQR(w http.ResponseWriter, d qrData) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = pageTemplates.ExecuteTemplate(w, "qr", d)
-}
+func renderLogin(w http.ResponseWriter, d loginData) { render(w, "login", d) }
 
-func renderPage(w http.ResponseWriter, d pageData) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = pageTemplates.ExecuteTemplate(w, "page.html", d)
-}
+func renderQR(w http.ResponseWriter, d qrData) { render(w, "qr", d) }
+
+func renderPage(w http.ResponseWriter, d pageData) { render(w, "page.html", d) }

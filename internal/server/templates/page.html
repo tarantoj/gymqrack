@@ -31,21 +31,6 @@
       --muted: #6b6b73;
       --faint: #8a8a92;
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #141416;
-        --fg: #f0f0f4;
-        --card: #1e1e23;
-        --card-border: #2e2e35;
-        --input-bg: #17171b;
-        --input-border: #3a3a42;
-        --secondary: #2a2a31;
-        --secondary-fg: #f0f0f4;
-        --error: #ff7b7b;
-        --muted: #9a9aa3;
-        --faint: #6f6f78;
-      }
-    }
     @supports (color: light-dark(#000, #fff)) {
       :root {
         --bg: light-dark(#f4f4f6, #141416);
@@ -156,7 +141,7 @@
 </head>
 <body>
   <h1>Gymqrack — Entry / Acceso</h1>
-  <div id="app">{{if eq .View "login"}}{{template "login" .}}{{else}}{{template "qr" .}}{{end}}</div>
+  <div id="app">{{if .Login}}{{template "login" .Login}}{{else}}{{template "qr" .QR}}{{end}}</div>
   <script src="/htmx.min.js"></script>
   <script src="/app.js"></script>
 </body>
