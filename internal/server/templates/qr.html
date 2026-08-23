@@ -4,7 +4,7 @@
     <span class="email">{{.Email}}</span>
     <button hx-post="/auth/logout" hx-target="#app" hx-swap="innerHTML" class="secondary">Log out</button>
   </div>
-  <div id="qrWrap"><img id="qrImg" src="/qr/png" alt="Club access QR"></div>
+  <div id="qrWrap"><img id="qrImg" src="/qr/png?t={{.Nonce}}" alt="Club access QR"></div>
   <p class="description">This code lets you enter and leave the club. It&rsquo;s personal and non-transferable, so use it responsibly. / Este c&oacute;digo te permite acceder y salir del club. Es personal e intransferible. Haz un uso responsable del mismo.</p>
   <p id="status">Updated {{.Updated}}</p>
 </div>

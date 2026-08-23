@@ -255,7 +255,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 // qrView builds the QR fragment state for email.
 func qrView(email string) qrData {
-	return qrData{Email: email, Updated: time.Now().Format(time.Kitchen)}
+	now := time.Now()
+	return qrData{Email: email, Updated: now.Format(time.Kitchen), Nonce: now.UnixNano()}
 }
 
 // qrDataFor builds the QR view state, falling back to a transient error state
@@ -413,7 +414,8 @@ func (s *Server) handleQRPNG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "image/png")
-	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
 	_, _ = w.Write(png)
 }
 

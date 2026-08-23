@@ -275,6 +275,40 @@ func TestQRRefreshRotation(t *testing.T) {
 	}
 }
 
+func TestQRFragmentCacheBustsImageURL(t *testing.T) {
+	s := newTestServer(t)
+	h := s.Handler()
+	cookie := seededCookie("u@e.com")
+
+	first, _ := doJSON(t, h, http.MethodGet, "/qr/fragment", "", []*http.Cookie{cookie})
+	if first.Code != http.StatusOK {
+		t.Fatalf("first fragment status = %d", first.Code)
+	}
+	second, _ := doJSON(t, h, http.MethodGet, "/qr/fragment", "", []*http.Cookie{cookie})
+	if second.Code != http.StatusOK {
+		t.Fatalf("second fragment status = %d", second.Code)
+	}
+
+	nonce := func(body string) string {
+		const prefix = `src="/qr/png?t=`
+		i := strings.Index(body, prefix)
+		if i < 0 {
+			return ""
+		}
+		rest := body[i+len(prefix):]
+		j := strings.Index(rest, `"`)
+		if j < 0 {
+			return ""
+		}
+		return rest[:j]
+	}
+	if n1, n2 := nonce(first.Body.String()), nonce(second.Body.String()); n1 == "" || n2 == "" {
+		t.Fatalf("fragments should carry a cache-busting nonce: %q vs %q", n1, n2)
+	} else if n1 == n2 {
+		t.Fatalf("fragments should not reuse the same image nonce: %q", n1)
+	}
+}
+
 func TestQRPNGRendersPayload(t *testing.T) {
 	s := newTestServer(t)
 	h := s.Handler()
@@ -286,7 +320,7 @@ func TestQRPNGRendersPayload(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
 		t.Fatalf("Content-Type = %q, want image/png", ct)
 	}
-	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
 		t.Fatalf("Cache-Control = %q, want no-store", cc)
 	}
 	want, err := qr.PNG("exerp:checkin:1")

@@ -18,10 +18,13 @@ type loginData struct {
 
 // qrData is the fragment state for the live QR view. The QR image itself is a
 // separate request to /qr/png, so the fragment carries no payload bytes (the
-// payload is only ever encoded into the image, never into HTML).
+// payload is only ever encoded into the image, never into HTML). Nonce
+// cache-busts the image URL so every fragment render forces a fresh fetch
+// instead of relying on the browser re-requesting an identical-URL image.
 type qrData struct {
 	Email   string
 	Updated string
+	Nonce   int64
 }
 
 // pageData is the top-level state for the full page; one of the two embedded
