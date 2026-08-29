@@ -38,7 +38,7 @@
       xcodegen generate
       xcodebuild -project VivaGym.xcodeproj \
         -scheme VivaGymWatchCompanion \
-        -destination 'platform=iOS Simulator,name=iPhone 16' \
+        -destination 'platform=iOS Simulator,name=iPhone 17' \
         build
     '';
     test.exec = ''
@@ -46,7 +46,7 @@
       xcodegen generate
       xcodebuild -project VivaGym.xcodeproj \
         -scheme VivaGymKitTests \
-        -destination 'platform=iOS Simulator,name=iPhone 16' \
+        -destination 'platform=iOS Simulator,name=iPhone 17' \
         test
     '';
   };
