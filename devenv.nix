@@ -85,6 +85,16 @@ in
         go test ./...
         ```
       '';
+      watch = ''
+        # Generate the Xcode project and build the Apple Watch / iPhone companion apps
+
+        Requires full Xcode (watchOS SDK) for `xcodebuild`; `xcodegen` works without it.
+
+        ```bash
+        xcodegen generate --project ./apple
+        cd apple && devenv shell build
+        ```
+      '';
       lint = ''
         # Run gofmt, go vet, and staticcheck
 

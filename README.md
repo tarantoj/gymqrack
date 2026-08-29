@@ -11,8 +11,12 @@ Group app (`com.myvitale.vivagym.group`).
   never stores credentials; each user's token pair lives in an HttpOnly cookie
   owned by their browser.
 - `nixos/` — NixOS module to run the server as a hardened systemd service.
+- `apple/` — Apple Watch app + iPhone companion that show the entry QR when
+  near a club (talks to VivaGym directly; see `docs/watch.md`).
 - `docs/api.md` — notes on the API endpoints and auth flow (reverse
   engineered from the APK in `apk/`).
+- `docs/suma.md` — reverse-engineering notes + iOS feasibility assessment for
+  the RecargaSUMA transit-card recharge app (`apk/recargasuma/`).
 
 ## How auth works
 

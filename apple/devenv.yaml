@@ -1,0 +1,8 @@
+# Standalone Apple dev environment (Swift/XcodeGen). Entering apple/ activates
+# this project; the root project composes it via `imports: [./apple]`. Matches
+# the root nixpkgs/git-hooks inputs so tooling behaves identically.
+inputs:
+  git-hooks:
+    url: github:cachix/git-hooks.nix
+  nixpkgs:
+    url: github:NixOS/nixpkgs/nixpkgs-unstable

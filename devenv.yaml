@@ -4,6 +4,12 @@ inputs:
   nixpkgs:
     url: github:NixOS/nixpkgs/nixpkgs-unstable
 
+# Compose the Apple development environment from apple/ (XcodeGen + Swift
+# tooling). Entering apple/ activates that environment standalone; at the root
+# the two merge.
+imports:
+  - ./apple
+
 # Disabled: the integration validates secrets at devenv-eval time, which
 # breaks CI (no keyring on runners). Processes load secrets at runtime via
 # `secretspec run --`; SECRETSPEC_PROFILE/PROVIDER are exported in devenv.nix.

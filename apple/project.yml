@@ -1,0 +1,122 @@
+name: VivaGym
+options:
+  minimumXcodeGenVersion: 2.44.0
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "17.0"
+    watchOS: "10.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  # Shared VivaGymKit sources are compiled directly into each app target (and
+  # the test bundle) rather than a framework: watch host/framework embedding is
+  # avoided and only Apple-provided SDKs are needed.
+  VivaGymWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: VivaGymKit
+      - path: VivaGymWatch
+    info:
+      path: VivaGymWatch/Info.plist
+      properties:
+        CFBundleDisplayName: VivaGym
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        WKApplication: true
+        WKRunsIndependentlyOfCompanionApp: true
+        WKCompanionAppBundleIdentifier: com.vivagym.VivaGymCompanion
+        # $(DEVELOPMENT_TEAM). is Xcode's AppIdentifierPrefix; used at runtime
+        # to build the shared keychain access group in KeychainSessionStore.
+        AppIdentifierPrefix: "$(DEVELOPMENT_TEAM)."
+        UIBackgroundModes:
+          - location
+        NSLocationAlwaysAndWhenInUseUsageDescription: VivaGym uses your location to show your entry QR when you arrive at the gym.
+        NSLocationWhenInUseUsageDescription: VivaGym uses your location to detect when you are near the gym.
+        CFBundleLocalizations:
+          - es
+          - en
+    entitlements:
+      path: VivaGymWatch/VivaGymWatch.entitlements
+      properties:
+        keychain-access-groups:
+          - "$(AppIdentifierPrefix)vivagym.session"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vivagym.VivaGymWatch
+    scheme:
+      testTargets:
+        - VivaGymKitTests
+
+  VivaGymWatchCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: VivaGymKit
+      - path: VivaGymWatchCompanion
+    info:
+      path: VivaGymWatchCompanion/Info.plist
+      properties:
+        CFBundleDisplayName: VivaGym Watch
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+    entitlements:
+      path: VivaGymWatchCompanion/VivaGymWatchCompanion.entitlements
+      properties:
+        keychain-access-groups:
+          - "$(AppIdentifierPrefix)vivagym.session"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vivagym.VivaGymCompanion
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    scheme:
+      testTargets:
+        - VivaGymKitTests
+
+  VivaGymKitTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: VivaGymKit
+      - path: VivaGymKitTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vivagym.VivaGymKitTests
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
+
+schemes:
+  VivaGymWatch:
+    build:
+      targets:
+        VivaGymWatch: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - VivaGymKitTests
+  VivaGymWatchCompanion:
+    build:
+      targets:
+        VivaGymWatchCompanion: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - VivaGymKitTests
+  VivaGymKitTests:
+    build:
+      targets:
+        VivaGymKitTests: all
+    test:
+      config: Debug
+      targets:
+        - VivaGymKitTests
