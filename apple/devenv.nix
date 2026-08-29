@@ -15,6 +15,8 @@
     xcodegen # generate the Xcode project from project.yml (works without Xcode)
   ];
 
+  languages.swift.enable = true;
+
   scripts = {
     generate.exec = ''
       cd ${config.git.root}/apple
