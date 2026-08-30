@@ -20,6 +20,12 @@ public enum VivaGymConfig {
     public static let regionRadius: CLLocationDistance = 200
     /// How often the QR payload is re-fetched while the QR screen is visible.
     public static let qrRefreshInterval: TimeInterval = 45
+    /// Radius (m) of the region hint used when geocoding a club's address so the
+    /// Apple Maps lookup disambiguates to the right city.
+    public static let clubPlaceRegionRadius: CLLocationDistance = 3000
+    /// Distance (m) beyond which the Apple Maps place coordinate is considered
+    /// to disagree with the API coordinate (logged as a mismatch).
+    public static let clubPlaceMismatchThreshold: CLLocationDistance = 2000
     /// Access-token safety margin (s) before expiry, matching gymqrack.
     public static let tokenSafetyMargin: TimeInterval = 10
 }

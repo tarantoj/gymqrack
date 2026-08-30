@@ -13,6 +13,7 @@ import Foundation
     @Published var clubsError: String?
 
     private let client = VivaGymClient()
+    private let resolver = ClubPlaceResolver()
 
     init() {
         let session = KeychainSessionStore.load()
@@ -30,6 +31,7 @@ import Foundation
             let session = try await validSession()
             clubs = try await client.fetchUserClubs(accessToken: session.accessToken)
             clubsError = nil
+            pushResolvedClubs()
         } catch {
             clubsError = message(for: error)
         }
@@ -83,6 +85,7 @@ import Foundation
             SessionSync.shared.sendSession(session)
             do {
                 clubs = try await client.fetchUserClubs(accessToken: session.accessToken)
+                pushResolvedClubs()
             } catch {
                 clubsError = message(for: error)
             }
@@ -100,6 +103,18 @@ import Foundation
         errorMessage = nil
         clubsError = nil
         SessionSync.shared.sendSignedOut()
+    }
+
+    /// Resolves the current club list to Apple Maps places off the login
+    /// critical path and pushes them to the watch.
+    @MainActor
+    private func pushResolvedClubs() {
+        let current = clubs
+        Task {
+            let places = await resolver.resolveAll(current)
+            guard !places.isEmpty else { return }
+            SessionSync.shared.sendClubs(places)
+        }
     }
 
     private func message(for error: Error) -> String {

@@ -35,6 +35,38 @@ public struct Center: Codable, Hashable, Identifiable, Sendable {
         coordinate.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
+    /// Returns a copy whose coordinates are overridden by a resolved Apple Maps
+    /// place, so the geofence anchors on the real venue.
+    public func applyingPlace(_ place: ClubPlace) -> Center {
+        Center(
+            clubNo: clubNo,
+            clubName: clubName,
+            latitude: place.latitude,
+            longitude: place.longitude,
+            address1: address1,
+            address2: address2,
+            address3: address3,
+            postalCode: postalCode,
+            urlName: urlName,
+            title: title,
+            description: description,
+            telephone: telephone,
+            regionDesc: regionDesc,
+            autonomousRegion: autonomousRegion,
+            isOpen: isOpen
+        )
+    }
+
+    /// Applies resolved places (keyed by `clubNo`) over the given clubs, keeping
+    /// each club's API coordinates when no place is available.
+    public static func applyingPlaces(_ clubs: [Center], places: [ClubPlace]) -> [Center] {
+        let byNo = Dictionary(uniqueKeysWithValues: places.map { ($0.clubNo, $0) })
+        return clubs.map { club in
+            guard let place = byNo[club.clubNo] else { return club }
+            return club.applyingPlace(place)
+        }
+    }
+
     public init(
         clubNo: Int,
         clubName: String? = nil,

@@ -66,6 +66,10 @@ final class SessionStore: ObservableObject {
             state = .locating
             proximity.startLocation()
             clubs = try await client.fetchUserClubs(accessToken: session.accessToken)
+            // Prefer the companion's Apple Maps place coordinates when they are
+            // available (pushed over WatchConnectivity / persisted locally); the
+            // API coordinates are the fallback while the watch runs standalone.
+            clubs = Center.applyingPlaces(clubs, places: SessionSync.shared.storedClubPlaces)
             proximity.registerClubs(clubs)
             recompute()
         } catch let error as VivaGymError {

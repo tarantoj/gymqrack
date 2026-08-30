@@ -27,9 +27,16 @@ public final class SessionSync: NSObject, WCSessionDelegate {
 
     private static let eventKey = "event"
     private static let sessionKey = "session"
+    private static let clubsKey = "clubs"
     private static let eventSession = "session"
     private static let eventSignedOut = "signedOut"
+    private static let eventClubs = "clubs"
     private static let eventRequest = "requestSession"
+    private static let storedClubsKey = "storedClubPlaces"
+
+    /// Resolved Apple Maps places most recently pushed by the companion,
+    /// available to the watch store on any launch (see `loadStoredPlaces`).
+    public private(set) var storedClubPlaces: [ClubPlace] = []
 
     public override convenience init() {
         self.init(session: WCSession.default)
@@ -38,6 +45,20 @@ public final class SessionSync: NSObject, WCSessionDelegate {
     public init(session: WCSession) {
         self.session = session
         super.init()
+        loadStoredPlaces()
+    }
+
+    private func loadStoredPlaces() {
+        guard let data = UserDefaults.standard.data(forKey: Self.storedClubsKey),
+              let places = try? JSONDecoder().decode([ClubPlace].self, from: data) else { return }
+        storedClubPlaces = places
+    }
+
+    private func store(_ places: [ClubPlace]) {
+        storedClubPlaces = places
+        if let data = try? JSONEncoder().encode(places) {
+            UserDefaults.standard.set(data, forKey: Self.storedClubsKey)
+        }
     }
 
     public func activate() {
@@ -57,6 +78,13 @@ public final class SessionSync: NSObject, WCSessionDelegate {
     /// Called by the companion after sign-out so the watch clears its copy.
     public func sendSignedOut() {
         transmit(payload(event: Self.eventSignedOut, data: nil))
+    }
+
+    /// Called by the companion after resolving clubs to Apple Maps places, so
+    /// the watch can anchor its geofence on the real venue.
+    public func sendClubs(_ places: [ClubPlace]) {
+        guard let data = try? JSONEncoder().encode(places) else { return }
+        transmit(payload(event: Self.eventClubs, data: data))
     }
 
     private func transmit(_ payload: [String: Any]) {
@@ -100,6 +128,13 @@ public final class SessionSync: NSObject, WCSessionDelegate {
             relayChange()
         case Self.eventSignedOut:
             KeychainSessionStore.clear()
+            store([])
+            relayChange()
+        case Self.eventClubs:
+            if let data = payload[Self.clubsKey] as? Data,
+               let places = try? JSONDecoder().decode([ClubPlace].self, from: data) {
+                store(places)
+            }
             relayChange()
         default:
             break
