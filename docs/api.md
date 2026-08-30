@@ -77,6 +77,25 @@ window is encoded server-side inside the digest + timestamp.
 > Note: the `exerp` path indicates this talks to the **Exerp** gym-management
 > platform (the same system used by VivaGym's access control / turnstiles).
 
+## Clubs / centers (for proximity)
+
+`GET api/v2.0/exerp/user-clubs` (`Authorization: Bearer`) returns the member's
+clubs, but in current builds **without coordinates** — entries look like
+`{"clubNo":126,"clubName":"Cánovas"}` (matches `ClubModel`, not the older
+`Center` with lat/long). `POST/GET api/v2.0/{locale}/exerp/user-clubs?newApiVersion=2`
+returns a `CenterNode` tree (`TREE`→`AREA`→`CENTER`, ids/names only),
+`api/v2.0/{locale}/user-club` returns the single home club
+(`{clubId, clubName, clubImage}`), and `v2.0/{appName}/user-clubs` is dead (404).
+
+Coordinates are only available from the public catalog
+`GET api/v2.0/{locale}/clubs` — entries
+`{"id":316,"name":"A Barca","address":"...","gpsLocation":"42.435862,-8.653767","imageUrl":"..."}`.
+Note the catalog `id` uses a **different id space from the member `clubNo`**
+(matching by `id==clubNo` yields wrong clubs, e.g. Cánovas↔Girona Sud), so the
+watch/companion join the member list to the catalog **by normalized name**
+(case- and accent-insensitive), leaving clubs without coordinates when the
+match is ambiguous or absent.
+
 ## Authentication
 
 Two-stage OAuth2 flow used by the current login code path

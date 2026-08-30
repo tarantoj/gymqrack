@@ -1,27 +1,15 @@
 import Foundation
 import Security
 
-/// Stores and reads the member `Session` in a Keychain access group shared
-/// between the iOS companion app and the watchOS app.
+/// Stores and reads the member `Session` in this app's own Keychain.
 ///
-/// The access group identifier is `$(DEVELOPMENT_TEAM).` + `vivagym.session`,
-/// the same value both targets declare in `keychain-access-groups`
-/// entitlements. The team prefix is injected into Info.plist at build time as
-/// `AppIdentifierPrefix`; when it is empty (e.g. unsigned simulator builds) the
-/// default per-app keychain is used instead, which still works for local runs.
+/// The companion and watch do not share keychain items (cross-app keychain
+/// access groups are unreliable for standalone watch apps on free teams), so
+/// each app keeps its own copy and `SessionSync` transfers the session between
+/// them over WatchConnectivity.
 public enum KeychainSessionStore {
-    private static let accessGroupSuffix = "vivagym.session"
     private static let service = "com.vivagym.session"
     private static let account = "member"
-
-    public static var accessGroup: String? {
-        guard let prefix = Bundle.main.object(forInfoDictionaryKey: "AppIdentifierPrefix") as? String else {
-            return nil
-        }
-        let trimmed = prefix.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, trimmed != "." else { return nil }
-        return trimmed + accessGroupSuffix
-    }
 
     public static func load() -> Session? {
         var query = baseQuery()
@@ -37,6 +25,9 @@ public enum KeychainSessionStore {
         let data = try JSONEncoder().encode(session)
         var item = baseQuery()
         item[kSecValueData as String] = data
+        // AfterFirstUnlock so the watch can read/refresh the token in the
+        // background or while locked; ThisDeviceOnly keeps it off other devices.
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         try delete(throwOnAbsent: false)
         let status = SecItemAdd(item as CFDictionary, nil)
         guard status == errSecSuccess else {
@@ -56,15 +47,11 @@ public enum KeychainSessionStore {
     }
 
     private static func baseQuery() -> [String: Any] {
-        var query: [String: Any] = [
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        if let accessGroup {
-            query[kSecAttrAccessGroup as String] = accessGroup
-        }
-        return query
     }
 }
 

@@ -105,7 +105,8 @@ public struct Center: Codable, Hashable, Identifiable, Sendable {
         if let v = try? c.decodeIfPresent(Double.self, forKey: key) { return v }
         if let s = try? c.decodeIfPresent(String.self, forKey: key) {
             let trimmed = s.trimmingCharacters(in: .whitespaces)
-            return trimmed.isEmpty ? nil : Double(s.replacingOccurrences(of: ",", with: "."))
+            guard !trimmed.isEmpty else { return nil }
+            return Double(trimmed.replacingOccurrences(of: ",", with: "."))
         }
         return nil
     }

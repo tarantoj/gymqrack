@@ -41,12 +41,12 @@ final class ClientTests: XCTestCase {
             case "/oauth/v2/token":
                 XCTAssertEqual(request.httpMethod, "POST")
                 XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
-                let tokenBody = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+                let tokenBody = String(decoding: MockURLProtocol.bodyData(from: request), as: UTF8.self)
                 XCTAssertTrue(tokenBody.contains("\"grant_type\":\"client_credentials\""), tokenBody)
                 return (self.response(), self.json(#"{"access_token":"temp","expires_in":600}"#))
             case "/api/v2.0/es/exerp/newAuth":
                 XCTAssertEqual(request.httpMethod, "POST")
-                let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+                let body = String(decoding: MockURLProtocol.bodyData(from: request), as: UTF8.self)
                 XCTAssertTrue(body.contains("access_token=temp"), body)
                 XCTAssertTrue(body.contains("appName=vivagym"), body)
                 XCTAssertTrue(body.contains("email=member@example.com"), body)
@@ -126,8 +126,16 @@ final class ClientTests: XCTestCase {
 
     func testFetchUserClubsDecodesStringAndNumericCoordinates() async throws {
         installHandler { request in
-            XCTAssertEqual(request.url!.path, "/api/v2.0/exerp/user-clubs")
-            return (self.response(), self.json(Self.userClubsJSON))
+            switch request.url!.path {
+            case "/api/v2.0/exerp/user-clubs":
+                return (self.response(), self.json(Self.userClubsJSON))
+            case "/api/v2.0/es/clubs":
+                // Empty catalog: coordinates here come inline from user-clubs.
+                return (self.response(), self.json("[]"))
+            default:
+                XCTFail("unexpected path \(request.url!.path)")
+                return (self.response(), Data())
+            }
         }
 
         let clubs = try await client.fetchUserClubs(accessToken: "acc")
@@ -145,6 +153,43 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(second.longitude ?? -1, 2.192, accuracy: 0.001)
     }
 
+    func testFetchUserClubsMergesCoordinatesByCatalogName() async throws {
+        installHandler { request in
+            switch request.url!.path {
+            case "/api/v2.0/exerp/user-clubs":
+                // Current API returns member clubs without coordinates and with
+                // clubNos that differ from catalog ids.
+                return (self.response(), self.json(Self.memberClubsJSON))
+            case "/api/v2.0/es/clubs":
+                return (self.response(), self.json(Self.catalogClubsJSON))
+            default:
+                XCTFail("unexpected path \(request.url!.path)")
+                return (self.response(), Data())
+            }
+        }
+
+        let clubs = try await client.fetchUserClubs(accessToken: "acc")
+        XCTAssertEqual(clubs.count, 3)
+
+        // Must land on the name-matched catalog entry (id 42, Valencia), NOT the
+        // unrelated "Artika" entry that occupies the member club's own id (148).
+        let troya = clubs.first { $0.clubNo == 148 }
+        XCTAssertEqual(troya?.clubName, "Troya")
+        XCTAssertEqual(troya?.latitude ?? -1, 39.4699, accuracy: 0.001)
+        XCTAssertEqual(troya?.longitude ?? -1, -0.3763, accuracy: 0.001)
+        XCTAssertEqual(troya?.address1, "Carrer de Xàtiva 8")
+
+        let canovas = clubs.first { $0.clubNo == 126 }
+        XCTAssertEqual(canovas?.clubName, "Cánovas")
+        XCTAssertEqual(canovas?.latitude ?? -1, 36.7202, accuracy: 0.001)
+        XCTAssertEqual(canovas?.longitude ?? -1, -4.4203, accuracy: 0.001)
+
+        let ruzafa = clubs.first { $0.clubNo == 648 }
+        XCTAssertEqual(ruzafa?.clubName, "Ruzafa")
+        XCTAssertEqual(ruzafa?.latitude ?? -1, 39.4644, accuracy: 0.001)
+        XCTAssertEqual(ruzafa?.longitude ?? -1, -0.3763, accuracy: 0.001)
+    }
+
     func testCenterDecoderToleratesEmptyAndStringNumbers() throws {
         let clubs = try JSONDecoder().decode(
             [Center].self,
@@ -155,6 +200,24 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(clubs[0].latitude ?? -1, 40.49, accuracy: 0.001)
         XCTAssertNil(clubs[2].coordinate)
     }
+
+    private static let memberClubsJSON = """
+    [
+      { "clubNo": 148, "clubName": "Troya" },
+      { "clubNo": 126, "clubName": "Cánovas" },
+      { "clubNo": 648, "clubName": "Ruzafa" }
+    ]
+    """
+
+    private static let catalogClubsJSON = """
+    [
+      { "id": 42, "name": "Troya", "address": "Carrer de Xàtiva 8", "gpsLocation": "39.4699,-0.3763", "imageUrl": "https://example.com/42.jpeg" },
+      { "id": 43, "name": "Cánovas", "address": "Paseo del Parque 1", "gpsLocation": "36.7202,-4.4203", "imageUrl": "https://example.com/43.jpeg" },
+      { "id": 44, "name": "Ruzafa", "address": "C/ Ruzafa 53", "gpsLocation": "39.4644,-0.3763", "imageUrl": "https://example.com/44.jpeg" },
+      { "id": 148, "name": "Artika", "address": "Pamplona 1", "gpsLocation": "42.8308,-1.6504", "imageUrl": "https://example.com/148.jpeg" },
+      { "id": 126, "name": "Girona Sud", "address": "Girona 1", "gpsLocation": "41.9544,2.8087", "imageUrl": "https://example.com/126.jpeg" }
+    ]
+    """
 
     private static let userClubsJSON = """
     [

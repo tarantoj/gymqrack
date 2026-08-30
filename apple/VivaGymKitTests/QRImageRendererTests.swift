@@ -31,7 +31,17 @@ final class QRImageRendererTests: XCTestCase {
         let cgImage = try XCTUnwrap(image.cgImage)
         let request = VNDetectBarcodesRequest()
         request.symbologies = [.qr]
-        try VNImageRequestHandler(cgImage: cgImage).perform([request])
+        do {
+            try VNImageRequestHandler(cgImage: cgImage).perform([request])
+        } catch {
+            #if targetEnvironment(simulator)
+            // Vision's barcode inference needs the Neural Engine; on simulators
+            // without one it fails with "Could not create inference context".
+            throw XCTSkip("Vision barcode inference unavailable on this simulator: \(error)")
+            #else
+            throw error
+            #endif
+        }
         let results = request.results ?? []
         XCTAssertEqual(results.count, 1, "expected exactly one QR in the image")
         XCTAssertEqual(results.first?.payloadStringValue, payload)

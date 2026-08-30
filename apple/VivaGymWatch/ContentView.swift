@@ -1,26 +1,74 @@
 import CoreLocation
 import SwiftUI
 
-/// Root view switching on the store's state machine.
+/// Root view: the status page and the full-screen QR page, swipeable left/right.
+/// When the store reaches `.near` the view jumps to the QR page automatically.
 struct VivaGymWatchRootView: View {
+    @EnvironmentObject private var store: SessionStore
+    @State private var page = 0
+
+    var body: some View {
+        TabView(selection: $page) {
+            StatusPage()
+                .tag(0)
+            QRPageView()
+                .tag(1)
+        }
+        .onChange(of: store.state) { _, newState in
+            switch newState {
+            case .near:
+                page = 1
+            case .signedOut, .preparing, .locating, .far, .failed:
+                page = 0
+            }
+        }
+    }
+}
+
+/// Page 0: session/distance/error state (or the sign-in prompt).
+struct StatusPage: View {
     @EnvironmentObject private var store: SessionStore
 
     var body: some View {
-        Group {
-            switch store.state {
-            case .signedOut:
-                SignedOutView()
-            case .preparing, .locating:
-                PreparingView()
-            case .near(let club, let distance):
-                QRView(club: club, distance: distance)
-            case .far(let club, let distance):
-                DistanceView(club: club, distance: distance)
-            case .failed(let message):
-                ErrorView(message: message)
-            }
+        switch store.state {
+        case .signedOut:
+            SignedOutView()
+        case .preparing, .locating:
+            PreparingView()
+        case .near(let club, let distance):
+            NearStatusView(club: club, distance: distance)
+        case .far(let club, let distance):
+            DistanceView(club: club, distance: distance)
+        case .failed(let message):
+            ErrorView(message: message)
         }
-        .animation(.default, value: store.state)
+    }
+}
+
+/// Status shown while `.near` if the wearer swipes back from the QR page.
+struct NearStatusView: View {
+    let club: Center
+    let distance: CLLocationDistance?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "checkmark.seal")
+                .font(.title)
+                .foregroundStyle(.green)
+            Text(club.clubName ?? "VivaGym")
+                .font(.headline)
+                .multilineTextAlignment(.center)
+            if let distance {
+                Text(String(format: "%.0f m away", distance))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text("Swipe to scan your entry QR")
+                .font(.caption2)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
     }
 }
 

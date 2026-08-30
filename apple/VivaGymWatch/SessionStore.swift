@@ -20,6 +20,9 @@ final class SessionStore: ObservableObject {
     @Published var state: State = .preparing
     @Published var qrPayload: String?
     @Published var qrUpdated: Date?
+    /// Last QR fetch failure, surfaced so the QR screen can offer a retry
+    /// instead of waiting forever.
+    @Published var qrError: String?
 
     private let client: VivaGymClient
     private let proximity: ProximityMonitor
@@ -45,6 +48,7 @@ final class SessionStore: ObservableObject {
     func start() {
         stopQRRefresh()
         state = .preparing
+        qrError = nil
         forceQR = false
         guard KeychainSessionStore.load() != nil else {
             state = .signedOut
@@ -60,7 +64,6 @@ final class SessionStore: ObservableObject {
         do {
             let session = try await ensureValidSession()
             state = .locating
-            proximity.requestAuthorization()
             proximity.startLocation()
             clubs = try await client.fetchUserClubs(accessToken: session.accessToken)
             proximity.registerClubs(clubs)
@@ -167,24 +170,34 @@ final class SessionStore: ObservableObject {
 
     @MainActor
     func refreshQR() async {
-        guard case .near = state else { return }
+        guard KeychainSessionStore.load() != nil else {
+            qrError = nil
+            return
+        }
         do {
             let session = try await ensureValidSession()
             let payload = try await client.fetchQR(accessToken: session.accessToken)
             qrPayload = payload
             qrUpdated = Date()
-        } catch {}
+            qrError = nil
+        } catch {
+            if let error = error as? VivaGymError, error.status != 0 {
+                qrError = error.localizedDescription
+            } else {
+                qrError = "Couldn't update the QR"
+            }
+        }
     }
 
     @MainActor
     private func startQRRefresh() {
         stopQRRefresh()
         Task { await refreshQR() }
-        refreshTask = Task {
+        refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(VivaGymConfig.qrRefreshInterval * 1_000_000_000))
-                guard !Task.isCancelled else { break }
-                await refreshQR()
+                guard !Task.isCancelled, let self else { break }
+                await self.refreshQR()
             }
         }
     }

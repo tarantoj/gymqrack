@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 
 struct LoginView: View {
@@ -74,14 +75,25 @@ struct LoginView: View {
             if !controller.clubs.isEmpty {
                 Section("Your clubs") {
                     ForEach(controller.clubs) { club in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(club.clubName ?? "VivaGym")
-                                .font(.subheadline)
-                            Text([club.address1, club.address2, club.postalCode]
-                                .compactMap { $0 }
-                                .joined(separator: ", "))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        HStack(alignment: .center, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(club.clubName ?? "VivaGym")
+                                    .font(.subheadline)
+                                Text([club.address1, club.address2, club.postalCode]
+                                    .compactMap { $0 }
+                                    .joined(separator: ", "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 4)
+                            if let coordinate = club.coordinate {
+                                Button {
+                                    openDirections(to: coordinate, name: club.clubName ?? "VivaGym")
+                                } label: {
+                                    Label("Directions", systemImage: "arrow.triangle.turn.up.right.diamond")
+                                        .font(.caption)
+                                }
+                            }
                         }
                     }
                 }
@@ -93,6 +105,10 @@ struct LoginView: View {
                 }
             } footer: {
                 Text("Open VivaGym on your watch: the entry QR appears when you're near your club.")
+                if let clubsError = controller.clubsError {
+                    Text(clubsError)
+                        .foregroundStyle(.red)
+                }
             }
         }
     }
@@ -105,18 +121,43 @@ struct LoginView: View {
             password = ""
         }
     }
+
+    private func openDirections(to coordinate: CLLocationCoordinate2D, name: String) {
+        let placemark = MKPlacemark(coordinate: coordinate)
+        let mapItem = MKMapItem(placemark: placemark)
+        mapItem.name = name
+        mapItem.openInMaps(launchOptions: [
+            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving,
+        ])
+    }
 }
 
 @main
 struct CompanionApp: App {
     @StateObject private var controller = SessionController()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             LoginView()
                 .environmentObject(controller)
                 .task {
+                    SessionSync.shared.onActivated = { [controller] in
+                        Task { @MainActor in
+                            controller.pushSessionToWatch()
+                        }
+                    }
                     SessionSync.shared.activate()
+                    await controller.refreshStoredSession()
+                    controller.pushSessionToWatch()
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        Task {
+                            await controller.refreshStoredSession()
+                            controller.pushSessionToWatch()
+                        }
+                    }
                 }
         }
     }

@@ -1,27 +1,40 @@
-import CoreLocation
 import SwiftUI
 
-/// Renders the fresh entry QR. The payload is opaque and short-lived, so the
-/// store re-fetches on a timer while this view is on screen; the "New code"
-/// button forces an immediate refresh before scanning.
-struct QRView: View {
-    let club: Center
-    let distance: CLLocationDistance?
+/// The full-screen QR page: only the rendered QR image, nothing else.
+///
+/// The payload is opaque and short-lived, so the store re-fetches it on a timer
+/// while near a club (and again when this page first appears). Rendering uses
+/// `QRImageRenderer`, which draws the QR into an opaque bitmap (error-correction
+/// level L + 4-module quiet zone, matching the VivaGym app's ZXing encoder and
+/// gymqrack's rsc.io/qr).
+struct QRPageView: View {
     @EnvironmentObject private var store: SessionStore
 
     var body: some View {
-        VStack(spacing: 4) {
-            Text(club.clubName ?? "VivaGym")
-                .font(.caption2)
-                .lineLimit(1)
-                .foregroundStyle(.secondary)
-
-            if let payload = store.qrPayload, let image = QRImageRenderer.makeImage(payload: payload) {
+        Group {
+            if let payload = store.qrPayload,
+               let image = QRImageRenderer.makeImage(payload: payload) {
                 Image(uiImage: image)
                     .interpolation(.none)
                     .resizable()
                     .scaledToFit()
-                    .padding(4)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+            } else if let qrError = store.qrError {
+                VStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.title3)
+                        .foregroundStyle(.orange)
+                    Text(qrError)
+                        .font(.caption2)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                    Button("Retry") {
+                        Task { await store.refreshQR() }
+                    }
+                    .font(.caption2)
+                }
+                .padding(.horizontal, 12)
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -29,30 +42,13 @@ struct QRView: View {
                         await store.refreshQR()
                     }
             }
-
-            Text(statusText)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            Button("New code") {
-                Task { await store.refreshQR() }
+        }
+        .task {
+            // Keep the code fresh (e.g. when arriving while looking at the
+            // page); the 45 s timer covers the near-a-club case.
+            if store.qrPayload != nil {
+                await store.refreshQR()
             }
-            .font(.caption2)
         }
-    }
-
-    private var statusText: String {
-        let updated = store.qrUpdated.map(Self.shortTime) ?? "Fetching…"
-        if let distance {
-            return "\(updated) · \(String(format: "%.0f", distance)) m"
-        }
-        return updated
-    }
-
-    private static func shortTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
     }
 }
